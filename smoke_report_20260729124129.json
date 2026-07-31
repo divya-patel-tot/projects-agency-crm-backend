@@ -1,0 +1,251 @@
+{
+  "run_id": "20260729124129",
+  "org_id": "1a92c992-8b2c-411e-99d9-78a5b2d3e1ff",
+  "started_at": "2026-07-29T12:41:30.159070+00:00",
+  "finished_at": "2026-07-29T12:41:37.419548+00:00",
+  "passed": 39,
+  "failed": 0,
+  "warned": 1,
+  "steps": [
+    {
+      "category": "Setup",
+      "name": "create_smoke_org",
+      "status": "PASS",
+      "detail": "org_id=1a92c992-8b2c-411e-99d9-78a5b2d3e1ff"
+    },
+    {
+      "category": "Phase 0",
+      "name": "GET /health",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 0",
+      "name": "GET /health/ready",
+      "status": "WARN",
+      "detail": "status=503 (Redis often down in dev \u2014 not blocking)"
+    },
+    {
+      "category": "Phase 0",
+      "name": "GraphQL status query",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 0",
+      "name": "Swagger wrapper /graphql/queries/status",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "login",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "refreshToken",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "createCompany",
+      "status": "PASS",
+      "detail": "d816b5b8-2c33-4dfb-9dad-646f80c67472"
+    },
+    {
+      "category": "Phase 1",
+      "name": "updateCompany",
+      "status": "PASS",
+      "detail": "SMOKE_20260729124129 Company A Updated"
+    },
+    {
+      "category": "Phase 1",
+      "name": "companies list",
+      "status": "PASS",
+      "detail": "count=1"
+    },
+    {
+      "category": "Phase 1",
+      "name": "company detail + nested contacts",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "createContact (portal)",
+      "status": "PASS",
+      "detail": "a6ac561e-ced5-4f34-8162-493d6c7597b2"
+    },
+    {
+      "category": "Phase 1",
+      "name": "updateContact",
+      "status": "PASS",
+      "detail": "Primary Contact"
+    },
+    {
+      "category": "Phase 1",
+      "name": "contacts list",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "createTag",
+      "status": "PASS",
+      "detail": "2638087a-8686-43e9-a336-f1a27cee8482"
+    },
+    {
+      "category": "Phase 1",
+      "name": "addTag",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "tags list",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "createProject",
+      "status": "PASS",
+      "detail": "aee18b0d-5ea9-438c-91df-cd96c5fe3dd6"
+    },
+    {
+      "category": "Phase 2",
+      "name": "updateProject",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "project detail",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "createPhase x2",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "reorderPhases",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "createMilestone",
+      "status": "PASS",
+      "detail": "6eb980d3-14cd-402a-a104-688d5c9c77a4"
+    },
+    {
+      "category": "Phase 2",
+      "name": "createTask x2",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "updateTask",
+      "status": "PASS",
+      "detail": "in_progress"
+    },
+    {
+      "category": "Phase 2",
+      "name": "addTaskDependency",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "workload query",
+      "status": "PASS",
+      "detail": "rows=0"
+    },
+    {
+      "category": "Phase 2",
+      "name": "phases + nested milestones",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "document upload flow",
+      "status": "PASS",
+      "detail": "version=1"
+    },
+    {
+      "category": "Phase 3",
+      "name": "documents query",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "portalLogin",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "portalCompany + portalProjects",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "portalProject (no budget fields)",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "markMilestoneReadyForReview",
+      "status": "PASS",
+      "detail": "f4d273f4-15bb-450b-9f52-27374ba21c1b"
+    },
+    {
+      "category": "Phase 3",
+      "name": "portalPendingApprovals",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "approveMilestone",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "removeTaskDependency",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "removeTag",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "logout",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Cleanup",
+      "name": "database_and_assets",
+      "status": "PASS",
+      "detail": "removed org 1a92c992-8b2c-411e-99d9-78a5b2d3e1ff"
+    }
+  ]
+}

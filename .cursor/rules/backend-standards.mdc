@@ -1,0 +1,24 @@
+---
+description: Non-negotiable backend rules for this project
+globs:
+alwaysApply: true
+---
+
+- Every table is org_id-scoped. Postgres RLS is the real boundary — enforce it with
+  FORCE ROW LEVEL SECURITY, not just application-side filtering. Never write a query
+  that filters by org_id in Python as the ONLY protection.
+- RBAC checks happen server-side in service.py / deps.py, never trust a role or org_id
+  claim the client sends as a plain argument — only trust it from the verified JWT.
+- Every create/update/delete/status-transition on a core entity writes to activity_log
+  with a before/after diff. Soft delete only (deleted_at) — never a hard DELETE on core
+  entities. Repository reads must filter deleted_at IS NULL by default.
+- All config comes from app/core/config.py's Settings object. Never call os.environ
+  directly anywhere else, never hardcode a secret, connection string, or API key.
+- One-to-many GraphQL fields (company.contacts, project.tasks, etc.) must use a
+  DataLoader / batched query — no N+1 resolvers.
+- Layering per module: models.py (Pydantic) -> repository.py (SQLAlchemy) ->
+  service.py (business rules, state machines) -> schema.py (Strawberry, thin).
+- GROQ calls are advisory only: wrap in try/except, degrade to null on failure or
+  timeout, never block a business transaction on them, never write AI output into a
+  field that represents a human decision or a computed number.
+- See AGENTS.md at repo root for the data model, enums, actors, and state machines.
