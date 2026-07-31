@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import uuid
 from dataclasses import dataclass, field
@@ -31,12 +32,18 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+from app.core.bootstrap import bootstrap_env
+from app.core.env_file import require_env
+
+bootstrap_env()
+
 RUN_ID = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
 SMOKE_MARKER = f"SMOKE_{RUN_ID}"
 ADMIN_EMAIL = f"smoke-admin-{RUN_ID}@test.local"
-ADMIN_PASSWORD = "SmokeTestAdmin123!"
+ADMIN_PASSWORD = require_env("SMOKE_ADMIN_PASSWORD")
 PORTAL_EMAIL = f"smoke-portal-{RUN_ID}@test.local"
-PORTAL_PASSWORD = "SmokePortal123!"
+PORTAL_PASSWORD = require_env("SMOKE_PORTAL_PASSWORD")
+SMOKE_MEMBER_PASSWORD = require_env("SMOKE_MEMBER_PASSWORD")
 ORG_NAME = f"Smoke Test Org {RUN_ID}"
 
 
@@ -206,7 +213,7 @@ async def setup_smoke_org(report: SmokeReport) -> dict[str, Any]:
                 org_id=org_id,
                 name="Smoke Member",
                 email=f"smoke-member-{RUN_ID}@test.local",
-                password_hash=hash_password("SmokeMember123!"),
+                password_hash=hash_password(SMOKE_MEMBER_PASSWORD),
                 role=UserRole.TEAM_MEMBER.value,
                 status=UserStatus.ACTIVE.value,
             )
@@ -219,7 +226,7 @@ async def setup_smoke_org(report: SmokeReport) -> dict[str, Any]:
         "admin_id": admin_id,
         "member_id": member_id,
         "member_email": f"smoke-member-{RUN_ID}@test.local",
-        "member_password": "SmokeMember123!",
+        "member_password": SMOKE_MEMBER_PASSWORD,
     }
 
 

@@ -13,6 +13,7 @@ from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
 from app.graphql.planning.repository import reorder_milestone_indices, reorder_phase_indices, validate_dependency_insert
 from app.graphql.planning.service import add_task_dependency_record, get_workload_rows
+from tests.credentials import fixture_password
 
 
 async def _seed_project_tree(org_id: uuid.UUID) -> dict:
@@ -156,7 +157,7 @@ async def test_workload_aggregate():
                 org_id=org_id,
                 name="Assignee",
                 email=f"{assignee_id.hex[:8]}@example.com",
-                password_hash=hash_password("ChangeMe123!"),
+                password_hash=hash_password(fixture_password()),
                 role="team_member",
                 status="active",
             )

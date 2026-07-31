@@ -8,6 +8,7 @@ from app.core.db import AsyncSessionLocal, get_tenant_db
 from app.db.models.company import Company
 from app.db.models.contact import Contact
 from app.db.models.organization import Organization
+from tests.credentials import seed_admin_email, seed_admin_password
 
 
 @pytest.mark.asyncio
@@ -28,7 +29,7 @@ async def test_login_and_refresh_flow():
                   }
                 }
                 """,
-                "variables": {"email": "admin@example.com", "password": "ChangeMe123!"},
+                "variables": {"email": seed_admin_email(), "password": seed_admin_password()},
             },
         )
         assert login_resp.status_code == 200

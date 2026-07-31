@@ -4,14 +4,17 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.env_file import ENV_FILE
+
 
 class Settings(BaseSettings):
     """Central configuration — the ONLY module allowed to read environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(ENV_FILE),
+        env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="forbid",
+        extra="ignore",
     )
 
     environment: Literal["development", "staging", "production"] = "development"
@@ -75,7 +78,11 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    # Settings is cached per process; any .env change requires a full process restart.
+    # Cached per process; bootstrap loads backend/.env (overriding stale OS env) first.
+    # Restart the process after editing .env — nothing is persisted at OS level.
+    from app.core.bootstrap import bootstrap_env
+
+    bootstrap_env()
     return Settings()
 
 

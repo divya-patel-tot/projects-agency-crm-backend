@@ -22,6 +22,7 @@ from app.graphql.health.service import (
 from app.graphql.org_settings import HealthOrgSettings
 from app.graphql.retention.repository import has_active_enrollment_for_sequence
 from app.scheduler.jobs import contract_renewal_check, recalculate_health_scores
+from tests.credentials import fixture_password
 
 
 async def _seed_health_fixture() -> dict:
@@ -43,7 +44,7 @@ async def _seed_health_fixture() -> dict:
                 org_id=org_id,
                 name="AM",
                 email="am-health@example.com",
-                password_hash=hash_password("ChangeMe123!"),
+                password_hash=hash_password(fixture_password()),
                 role="account_manager",
                 status="active",
             )

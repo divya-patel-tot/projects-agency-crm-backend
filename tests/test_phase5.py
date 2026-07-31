@@ -20,6 +20,7 @@ from app.graphql.retention.service import (
     materialize_due_touchpoint,
 )
 from app.scheduler.jobs import flag_overdue_touchpoints, process_due_sequence_steps
+from tests.credentials import fixture_password
 
 
 async def _seed_retention_fixture() -> dict:
@@ -43,7 +44,7 @@ async def _seed_retention_fixture() -> dict:
                 org_id=org_id,
                 name="AM",
                 email="am@example.com",
-                password_hash=hash_password("ChangeMe123!"),
+                password_hash=hash_password(fixture_password()),
                 role="account_manager",
                 status="active",
             )

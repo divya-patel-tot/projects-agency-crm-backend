@@ -17,6 +17,13 @@ REDACT_KEYS = frozenset(
         "secret",
         "jwt_secret_key",
         "api_key",
+        "groq_api_key",
+        "resend_api_key",
+        "smtp_password",
+        "postgres_password",
+        "database_url",
+        "database_url_sync",
+        "sentry_dsn",
         "authorization",
         "cookie",
         "totp_secret",
@@ -24,9 +31,18 @@ REDACT_KEYS = frozenset(
     }
 )
 
+_REDACT_FRAGMENTS = ("password", "secret", "token", "api_key", "authorization", "credential")
+
+
+def _should_redact(key: str) -> bool:
+    lower = key.lower()
+    if lower in REDACT_KEYS:
+        return True
+    return any(fragment in lower for fragment in _REDACT_FRAGMENTS)
+
 
 def _redact_value(key: str, value: Any) -> Any:
-    if key.lower() in REDACT_KEYS:
+    if _should_redact(key):
         return "***REDACTED***"
     if isinstance(value, dict):
         return redact_dict(value)

@@ -16,15 +16,24 @@ from app.core.config import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 _groq_client: AsyncGroq | None = None
+_cached_api_key: str | None = None
+
+
+def reset_groq_client() -> None:
+    global _groq_client, _cached_api_key
+    _groq_client = None
+    _cached_api_key = None
 
 
 def _get_client(settings: Settings | None = None) -> AsyncGroq | None:
-    global _groq_client
+    global _groq_client, _cached_api_key
     settings = settings or get_settings()
     if not settings.groq_api_key:
+        reset_groq_client()
         return None
-    if _groq_client is None:
+    if _groq_client is None or _cached_api_key != settings.groq_api_key:
         _groq_client = AsyncGroq(api_key=settings.groq_api_key)
+        _cached_api_key = settings.groq_api_key
     return _groq_client
 
 

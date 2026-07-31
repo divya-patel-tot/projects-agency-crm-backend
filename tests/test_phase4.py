@@ -24,6 +24,7 @@ from app.graphql.change_requests.service import (
     submit_impact_assessment,
     transition_change_request,
 )
+from tests.credentials import fixture_password
 
 
 async def _seed_phase4_fixture() -> dict:
@@ -59,7 +60,7 @@ async def _seed_phase4_fixture() -> dict:
                 id=pm_id,
                 org_id=org_id,
                 email="pm@example.com",
-                password_hash=hash_password("ChangeMe123!"),
+                password_hash=hash_password(fixture_password()),
                 name="PM User",
                 role="project_manager",
                 status="active",
@@ -75,7 +76,7 @@ async def _seed_phase4_fixture() -> dict:
                 last_name="Contact",
                 email="client@example.com",
                 portal_access_enabled=True,
-                password_hash=hash_password("PortalPass123!"),
+                password_hash=hash_password(fixture_password()),
                 status="active",
             )
         )

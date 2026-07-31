@@ -17,6 +17,7 @@ from app.db.models.project import Project
 from app.graphql.approvals.service import approve_milestone, mark_milestone_ready_for_review, request_milestone_changes
 from app.graphql.documents.service import confirm_upload, request_upload_url
 from app.integrations import asset_storage
+from tests.credentials import fixture_password
 
 
 async def _seed_portal_fixture() -> dict:
@@ -45,7 +46,7 @@ async def _seed_portal_fixture() -> dict:
                 last_name="User",
                 email="portal@example.com",
                 portal_access_enabled=True,
-                password_hash=hash_password("PortalPass123!"),
+                password_hash=hash_password(fixture_password()),
                 status="active",
             )
         )
