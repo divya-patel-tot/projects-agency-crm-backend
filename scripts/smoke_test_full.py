@@ -1273,6 +1273,127 @@ async def run_smoke(report: SmokeReport) -> None:
             except Exception as exc:
                 report.add("Phase 5", "retentionSequences query", "FAIL", str(exc))
 
+        # --- Phase 5b: Auto-enrollment hooks ---
+        try:
+            data = await gql(
+                client,
+                """
+                mutation($name: String!) {
+                  createRetentionSequence(name: $name, triggerType: "on_company_created") { id }
+                }
+                """,
+                variables={"name": f"{SMOKE_MARKER} Auto Company Seq"},
+                token=admin_token,
+            )
+            ids["auto_company_seq"] = data["createRetentionSequence"]["id"]
+            await gql(
+                client,
+                """
+                mutation($sequenceId: ID!) {
+                  addSequenceStep(sequenceId: $sequenceId, channel: "email", offsetDays: 0) { id }
+                }
+                """,
+                variables={"sequenceId": ids["auto_company_seq"]},
+                token=admin_token,
+            )
+            data = await gql(
+                client,
+                """
+                mutation($name: String!) {
+                  createCompany(name: $name, status: "active") { id }
+                }
+                """,
+                variables={"name": f"{SMOKE_MARKER} Auto Enroll Co"},
+                token=admin_token,
+            )
+            ids["auto_enroll_company"] = data["createCompany"]["id"]
+            await gql(
+                client,
+                """
+                mutation($companyId: ID!, $email: String!) {
+                  createContact(
+                    companyId: $companyId
+                    firstName: "Auto"
+                    lastName: "Primary"
+                    email: $email
+                    isPrimary: true
+                    status: "active"
+                  ) { id isPrimary }
+                }
+                """,
+                variables={
+                    "companyId": ids["auto_enroll_company"],
+                    "email": f"auto-primary-{RUN_ID}@test.local",
+                },
+                token=admin_token,
+            )
+            from app.core.db import get_tenant_db
+            from app.graphql.retention.repository import has_active_enrollment_for_sequence
+
+            async with get_tenant_db(setup["org_id"]) as db:
+                enrolled = await has_active_enrollment_for_sequence(
+                    db,
+                    company_id=uuid.UUID(ids["auto_enroll_company"]),
+                    sequence_id=uuid.UUID(ids["auto_company_seq"]),
+                )
+            assert enrolled
+            report.add("Phase 5", "autoEnroll on_company_created", "PASS")
+        except Exception as exc:
+            report.add("Phase 5", "autoEnroll on_company_created", "FAIL", str(exc))
+
+        try:
+            data = await gql(
+                client,
+                """
+                mutation($name: String!) {
+                  createRetentionSequence(name: $name, triggerType: "on_project_completed") { id }
+                }
+                """,
+                variables={"name": f"{SMOKE_MARKER} Auto Project Seq"},
+                token=admin_token,
+            )
+            ids["auto_project_seq"] = data["createRetentionSequence"]["id"]
+            await gql(
+                client,
+                """
+                mutation($sequenceId: ID!) {
+                  addSequenceStep(sequenceId: $sequenceId, channel: "call", offsetDays: 1) { id }
+                }
+                """,
+                variables={"sequenceId": ids["auto_project_seq"]},
+                token=admin_token,
+            )
+            await gql(
+                client,
+                """
+                mutation($id: ID!) {
+                  updateContact(id: $id, isPrimary: true) { id isPrimary }
+                }
+                """,
+                variables={"id": ids["portal_contact"]},
+                token=admin_token,
+            )
+            await gql(
+                client,
+                """
+                mutation($id: ID!) {
+                  updateProject(id: $id, status: "completed") { id status }
+                }
+                """,
+                variables={"id": ids["project"]},
+                token=admin_token,
+            )
+            async with get_tenant_db(setup["org_id"]) as db:
+                enrolled = await has_active_enrollment_for_sequence(
+                    db,
+                    company_id=uuid.UUID(ids["company_a"]),
+                    sequence_id=uuid.UUID(ids["auto_project_seq"]),
+                )
+            assert enrolled
+            report.add("Phase 5", "autoEnroll on_project_completed", "PASS")
+        except Exception as exc:
+            report.add("Phase 5", "autoEnroll on_project_completed", "FAIL", str(exc))
+
         if portal_token and ids.get("retention_sequence") and ids.get("portal_contact"):
             try:
                 errors = await gql_expect_error(
@@ -1346,6 +1467,88 @@ async def run_smoke(report: SmokeReport) -> None:
             except Exception as exc:
                 report.add("Phase 6", "contracts query", "FAIL", str(exc))
 
+            try:
+                data = await gql(
+                    client,
+                    """
+                    mutation($id: ID!, $name: String!) {
+                      updateContract(id: $id, name: $name, value: 50000) { id name value status }
+                    }
+                    """,
+                    variables={"id": ids["contract"], "name": f"{SMOKE_MARKER} MSA Updated"},
+                    token=admin_token,
+                )
+                assert data["updateContract"]["name"].endswith("Updated")
+                assert float(data["updateContract"]["value"]) == 50000.0
+                report.add("Phase 6", "updateContract", "PASS")
+            except Exception as exc:
+                report.add("Phase 6", "updateContract", "FAIL", str(exc))
+
+        # Renewal sequence + contract in window
+        try:
+            data = await gql(
+                client,
+                """
+                mutation($name: String!) {
+                  createRetentionSequence(name: $name, triggerType: "on_renewal_approaching") { id }
+                }
+                """,
+                variables={"name": f"{SMOKE_MARKER} Renewal Seq"},
+                token=admin_token,
+            )
+            ids["renewal_sequence"] = data["createRetentionSequence"]["id"]
+            await gql(
+                client,
+                """
+                mutation($sequenceId: ID!) {
+                  addSequenceStep(sequenceId: $sequenceId, channel: "email", offsetDays: 0) { id }
+                }
+                """,
+                variables={"sequenceId": ids["renewal_sequence"]},
+                token=admin_token,
+            )
+            renewal_end = (date.today() + timedelta(days=14)).isoformat()
+            data = await gql(
+                client,
+                """
+                mutation($companyId: ID!, $name: String!, $startDate: Date!, $endDate: Date!) {
+                  createContract(
+                    companyId: $companyId
+                    name: $name
+                    startDate: $startDate
+                    endDate: $endDate
+                    status: "active"
+                  ) { id endDate }
+                }
+                """,
+                variables={
+                    "companyId": ids["company_a"],
+                    "name": f"{SMOKE_MARKER} Renewal Contract",
+                    "startDate": contract_start,
+                    "endDate": renewal_end,
+                },
+                token=admin_token,
+            )
+            ids["renewal_contract"] = data["createContract"]["id"]
+            from app.scheduler.jobs import contract_renewal_check
+
+            renewal_result = await contract_renewal_check(run_date=date.today())
+            assert renewal_result["enrollments_created"] >= 1
+            async with get_tenant_db(setup["org_id"]) as db:
+                assert await has_active_enrollment_for_sequence(
+                    db,
+                    company_id=uuid.UUID(ids["company_a"]),
+                    sequence_id=uuid.UUID(ids["renewal_sequence"]),
+                )
+            report.add(
+                "Phase 6",
+                "contractRenewalCheck",
+                "PASS",
+                f"enrolled={renewal_result['enrollments_created']}",
+            )
+        except Exception as exc:
+            report.add("Phase 6", "contractRenewalCheck", "FAIL", str(exc))
+
         try:
             from app.scheduler.jobs import recalculate_health_scores
 
@@ -1354,6 +1557,109 @@ async def run_smoke(report: SmokeReport) -> None:
             report.add("Phase 6", "recalculateHealthScores", "PASS", f"scored={result['companies_scored']}")
         except Exception as exc:
             report.add("Phase 6", "recalculateHealthScores", "FAIL", str(exc))
+
+        # Force at-risk scenario (direct service recalc bypasses job_runs idempotency)
+        try:
+            await gql(
+                client,
+                """
+                mutation($companyId: ID!, $name: String!) {
+                  createProject(
+                    companyId: $companyId
+                    name: $name
+                    status: "active"
+                    health: "delayed"
+                  ) { id health status }
+                }
+                """,
+                variables={
+                    "companyId": ids["company_a"],
+                    "name": f"{SMOKE_MARKER} At-Risk Project",
+                },
+                token=admin_token,
+            )
+            await gql(
+                client,
+                "mutation($id: ID!) { updateCompany(id: $id, status: \"paused\") { id status } }",
+                variables={"id": ids["company_a"]},
+                token=admin_token,
+            )
+            if ids.get("renewal_contract"):
+                renewal_end = (date.today() + timedelta(days=14)).isoformat()
+                await gql(
+                    client,
+                    "mutation($id: ID!, $endDate: Date!) { updateContract(id: $id, endDate: $endDate) { id endDate } }",
+                    variables={"id": ids["renewal_contract"], "endDate": renewal_end},
+                    token=admin_token,
+                )
+
+            from app.db.models.organization import Organization
+            from app.graphql.health.service import recalculate_org_health_scores
+            from app.graphql.org_settings import health_settings_from_dict
+
+            async with get_tenant_db(setup["org_id"]) as db:
+                org = await db.get(Organization, setup["org_id"])
+                settings = health_settings_from_dict(org.settings if org else {})
+                await recalculate_org_health_scores(db, org_settings=settings, include_ai=False)
+
+            data = await gql(
+                client,
+                """
+                query($companyId: ID!) {
+                  healthScoreHistory(companyId: $companyId, limit: 5) { id score calculatedAt }
+                  atRiskCompanies(threshold: 61) { id name healthScore }
+                }
+                """,
+                variables={"companyId": ids["company_a"]},
+                token=admin_token,
+            )
+            assert len(data["healthScoreHistory"]) >= 1
+            latest_score = float(data["healthScoreHistory"][0]["score"])
+            assert latest_score <= 60.0, f"score={latest_score}"
+            at_risk_ids = [c["id"] for c in data["atRiskCompanies"]]
+            assert ids["company_a"] in at_risk_ids, f"at_risk={at_risk_ids} score={latest_score}"
+            report.add(
+                "Phase 6",
+                "atRiskCompanies below threshold",
+                "PASS",
+                f"score={latest_score}",
+            )
+        except Exception as exc:
+            report.add("Phase 6", "atRiskCompanies below threshold", "FAIL", str(exc))
+
+        try:
+            from app.scheduler.jobs import weekly_digest_email
+
+            digest_result = await weekly_digest_email(run_date=date.today())
+            assert "emails_sent" in digest_result
+            report.add(
+                "Phase 6",
+                "weeklyDigestEmail",
+                "PASS",
+                f"emails={digest_result['emails_sent']}",
+            )
+        except Exception as exc:
+            report.add("Phase 6", "weeklyDigestEmail", "FAIL", str(exc))
+
+        if ids.get("contract"):
+            try:
+                deleted = await gql(
+                    client,
+                    "mutation($id: ID!) { deleteContract(id: $id) }",
+                    variables={"id": ids["contract"]},
+                    token=admin_token,
+                )
+                assert deleted["deleteContract"] is True
+                data = await gql(
+                    client,
+                    "query($companyId: ID!) { contracts(companyId: $companyId) { id } }",
+                    variables={"companyId": ids["company_a"]},
+                    token=admin_token,
+                )
+                assert not any(c["id"] == ids["contract"] for c in data["contracts"])
+                report.add("Phase 6", "deleteContract", "PASS")
+            except Exception as exc:
+                report.add("Phase 6", "deleteContract", "FAIL", str(exc))
 
         try:
             data = await gql(
@@ -1370,12 +1676,12 @@ async def run_smoke(report: SmokeReport) -> None:
             assert len(data["healthScoreHistory"]) >= 1
             report.add(
                 "Phase 6",
-                "healthScoreHistory + atRiskCompanies",
+                "healthScoreHistory query",
                 "PASS",
-                f"history={len(data['healthScoreHistory'])} at_risk={len(data['atRiskCompanies'])}",
+                f"history={len(data['healthScoreHistory'])}",
             )
         except Exception as exc:
-            report.add("Phase 6", "healthScoreHistory + atRiskCompanies", "FAIL", str(exc))
+            report.add("Phase 6", "healthScoreHistory query", "FAIL", str(exc))
 
         # --- Phase 4 + Security: negative cases ---
         from sqlalchemy import select

@@ -14,7 +14,11 @@ from app.db.models.organization import Organization
 from app.db.models.project import Project
 from app.db.models.retention import RetentionSequence, RetentionSequenceStep
 from app.db.models.user import User
-from app.graphql.health.service import compute_company_health_factors, record_company_health_score
+from app.graphql.health.service import (
+    compute_company_health_factors,
+    get_at_risk_companies,
+    record_company_health_score,
+)
 from app.graphql.org_settings import HealthOrgSettings
 from app.graphql.retention.repository import has_active_enrollment_for_sequence
 from app.scheduler.jobs import contract_renewal_check, recalculate_health_scores
@@ -188,3 +192,40 @@ async def test_recalculate_health_scores_idempotent_via_job_runs():
             )
         ).scalar_one()
         assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_at_risk_company_below_threshold():
+    data = await _seed_health_fixture()
+    settings = HealthOrgSettings(at_risk_threshold=60.0)
+
+    async with get_tenant_db(data["org_id"]) as db:
+        company = await db.get(Company, data["company_id"])
+        project = await db.get(Project, data["project_id"])
+        project.health = ProjectHealth.DELAYED.value
+        company.status = "paused"
+        await db.flush()
+
+        score, _ = await compute_company_health_factors(db, company=company, settings=settings)
+        assert score < settings.at_risk_threshold
+
+        await record_company_health_score(db, company=company, settings=settings, include_ai=False)
+        at_risk = await get_at_risk_companies(db, org_settings=settings)
+        assert any(c.id == data["company_id"] for c in at_risk)
+
+
+@pytest.mark.asyncio
+async def test_weekly_digest_email_job_completes():
+    data = await _seed_health_fixture()
+    settings = HealthOrgSettings(at_risk_threshold=99.0)
+    today = date.today()
+
+    async with get_tenant_db(data["org_id"]) as db:
+        company = await db.get(Company, data["company_id"])
+        await record_company_health_score(db, company=company, settings=settings, include_ai=False)
+
+    from app.scheduler.jobs import weekly_digest_email
+
+    result = await weekly_digest_email(run_date=today)
+    assert "emails_sent" in result
+    assert result["emails_sent"] >= 0

@@ -197,7 +197,8 @@ async def _create_enrollment(
 ) -> RetentionEnrollment:
     if not sequence.is_active or sequence.is_template:
         raise DomainError("Sequence is not enrollable", code="conflict")
-    if not sequence.steps:
+    steps = await list_steps_for_sequence(db, sequence.id)
+    if not steps:
         raise DomainError("Sequence has no steps", code="validation_error")
 
     now = datetime.now(UTC)

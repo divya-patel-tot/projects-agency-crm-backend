@@ -5,14 +5,20 @@ import pytest
 
 from app.core.db import AsyncSessionLocal, get_tenant_db
 from app.core.security import hash_password
-from app.db.enums import EnrollmentStatus, SequenceTriggerType, TouchpointChannel, TouchpointStatus
+from app.db.enums import EnrollmentStatus, ProjectStatus, SequenceTriggerType, TouchpointChannel, TouchpointStatus
 from app.db.models.company import Company
 from app.db.models.contact import Contact
 from app.db.models.organization import Organization
+from app.db.models.project import Project
 from app.db.models.retention import RetentionEnrollment, RetentionSequence, RetentionSequenceStep
 from app.db.models.user import User
-from app.graphql.retention.repository import list_steps_for_sequence
-from app.graphql.retention.service import complete_touchpoint, materialize_due_touchpoint
+from app.graphql.retention.repository import has_active_enrollment_for_sequence, list_steps_for_sequence
+from app.graphql.retention.service import (
+    complete_touchpoint,
+    create_sequence_record,
+    add_sequence_step,
+    materialize_due_touchpoint,
+)
 from app.scheduler.jobs import flag_overdue_touchpoints, process_due_sequence_steps
 
 
@@ -23,6 +29,7 @@ async def _seed_retention_fixture() -> dict:
     user_id = uuid.uuid4()
     sequence_id = uuid.uuid4()
     step_id = uuid.uuid4()
+    project_id = uuid.uuid4()
 
     async with AsyncSessionLocal() as session:
         async with session.begin():
@@ -75,6 +82,15 @@ async def _seed_retention_fixture() -> dict:
                 offset_days=0,
             )
         )
+        db.add(
+            Project(
+                id=project_id,
+                org_id=org_id,
+                company_id=company_id,
+                name="Active Project",
+                status="active",
+            )
+        )
         await db.flush()
         enrolled_at = datetime.now(UTC) - timedelta(days=1)
         enrollment_id = uuid.uuid4()
@@ -97,6 +113,9 @@ async def _seed_retention_fixture() -> dict:
         "enrollment_id": enrollment_id,
         "sequence_id": sequence_id,
         "step_id": step_id,
+        "company_id": company_id,
+        "contact_id": contact_id,
+        "project_id": project_id,
     }
 
 
@@ -169,3 +188,75 @@ async def test_flag_overdue_touchpoints():
 
         tp = await db.get(Touchpoint, tp_id)
         assert tp.status == TouchpointStatus.OVERDUE.value
+
+
+@pytest.mark.asyncio
+async def test_auto_enroll_on_primary_contact_create():
+    data = await _seed_retention_fixture()
+
+    async with get_tenant_db(data["org_id"], role="account_manager") as db:
+        user = await db.get(User, data["user_id"])
+        seq = await create_sequence_record(
+            db,
+            actor=user,
+            name="On Company Created",
+            trigger_type=SequenceTriggerType.ON_COMPANY_CREATED.value,
+        )
+        await add_sequence_step(
+            db,
+            actor=user,
+            sequence_id=seq.id,
+            channel=TouchpointChannel.EMAIL.value,
+            offset_days=0,
+        )
+        company_id = uuid.uuid4()
+        db.add(Company(id=company_id, org_id=data["org_id"], name="New Co", status="active"))
+        await db.flush()
+
+        from app.graphql.contacts.service import create_contact_record
+
+        await create_contact_record(
+            db,
+            actor=user,
+            company_id=company_id,
+            first_name="New",
+            last_name="Primary",
+            email="new@co.com",
+            is_primary=True,
+        )
+        assert await has_active_enrollment_for_sequence(db, company_id=company_id, sequence_id=seq.id)
+
+
+@pytest.mark.asyncio
+async def test_auto_enroll_on_project_completed():
+    data = await _seed_retention_fixture()
+
+    async with get_tenant_db(data["org_id"], role="account_manager") as db:
+        user = await db.get(User, data["user_id"])
+        seq = await create_sequence_record(
+            db,
+            actor=user,
+            name="On Project Completed",
+            trigger_type=SequenceTriggerType.ON_PROJECT_COMPLETED.value,
+        )
+        await add_sequence_step(
+            db,
+            actor=user,
+            sequence_id=seq.id,
+            channel=TouchpointChannel.CALL.value,
+            offset_days=1,
+        )
+
+        from app.graphql.projects.service import update_project_record
+
+        await update_project_record(
+            db,
+            actor=user,
+            project_id=data["project_id"],
+            updates={"status": ProjectStatus.COMPLETED.value},
+        )
+        assert await has_active_enrollment_for_sequence(
+            db,
+            company_id=data["company_id"],
+            sequence_id=seq.id,
+        )

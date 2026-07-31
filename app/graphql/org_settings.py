@@ -14,6 +14,7 @@ class HealthOrgSettings:
     weight_company_status: float = 0.10
     at_risk_threshold: float = 60.0
     contract_renewal_window_days: int = 60
+       
 
 
 def health_settings_from_dict(settings: dict | None) -> HealthOrgSettings:

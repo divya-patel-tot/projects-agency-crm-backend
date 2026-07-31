@@ -1,0 +1,449 @@
+{
+  "run_id": "20260731065743",
+  "org_id": "aae5aaf6-07b3-47aa-8d68-002aeefb973d",
+  "started_at": "2026-07-31T06:57:43.289299+00:00",
+  "finished_at": "2026-07-31T06:58:02.508838+00:00",
+  "passed": 72,
+  "failed": 1,
+  "warned": 0,
+  "steps": [
+    {
+      "category": "Setup",
+      "name": "create_smoke_org",
+      "status": "PASS",
+      "detail": "org_id=aae5aaf6-07b3-47aa-8d68-002aeefb973d"
+    },
+    {
+      "category": "Phase 0",
+      "name": "GET /health",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 0",
+      "name": "GET /health/ready",
+      "status": "PASS",
+      "detail": "database ok"
+    },
+    {
+      "category": "Phase 0",
+      "name": "GraphQL status query",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 0",
+      "name": "Swagger wrapper /graphql/queries/status",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Security",
+      "name": "unauthenticated companies query rejected",
+      "status": "PASS",
+      "detail": "authentication_error"
+    },
+    {
+      "category": "Security",
+      "name": "unauthenticated changeRequests rejected",
+      "status": "PASS",
+      "detail": "authentication_error"
+    },
+    {
+      "category": "Security",
+      "name": "public status query allowed",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "login",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "refreshToken",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "createCompany",
+      "status": "PASS",
+      "detail": "cfa40484-dc48-453d-a9a2-63603dc1b933"
+    },
+    {
+      "category": "Phase 1",
+      "name": "updateCompany",
+      "status": "PASS",
+      "detail": "SMOKE_20260731065743 Company A Updated"
+    },
+    {
+      "category": "Phase 1",
+      "name": "companies list",
+      "status": "PASS",
+      "detail": "count=1"
+    },
+    {
+      "category": "Phase 1",
+      "name": "company detail + nested contacts",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "createContact (portal)",
+      "status": "PASS",
+      "detail": "dddc7f6b-ccb7-4a0e-b7df-35be314d3dbb"
+    },
+    {
+      "category": "Phase 1",
+      "name": "updateContact",
+      "status": "PASS",
+      "detail": "Primary Contact"
+    },
+    {
+      "category": "Phase 1",
+      "name": "contacts list",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "createTag",
+      "status": "PASS",
+      "detail": "5f48d568-cce3-46e2-8d2d-bdadee6fe450"
+    },
+    {
+      "category": "Phase 1",
+      "name": "addTag",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "tags list",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "createProject",
+      "status": "PASS",
+      "detail": "a28b3356-27a9-4583-b5b4-3ca574c08afa"
+    },
+    {
+      "category": "Phase 2",
+      "name": "updateProject",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "project detail",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "createPhase x2",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "reorderPhases",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "createMilestone",
+      "status": "PASS",
+      "detail": "e95d23e4-1d27-4433-85c5-292f5bcd963b"
+    },
+    {
+      "category": "Phase 2",
+      "name": "createTask x2",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "updateTask",
+      "status": "PASS",
+      "detail": "in_progress"
+    },
+    {
+      "category": "Phase 2",
+      "name": "addTaskDependency",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 2",
+      "name": "workload query",
+      "status": "PASS",
+      "detail": "rows=0"
+    },
+    {
+      "category": "Phase 2",
+      "name": "phases + nested milestones",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "document upload flow",
+      "status": "PASS",
+      "detail": "version=1"
+    },
+    {
+      "category": "Phase 3",
+      "name": "documents query",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "portalLogin",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "portalCompany + portalProjects",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "portalProject (no budget fields)",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "markMilestoneReadyForReview",
+      "status": "PASS",
+      "detail": "bae04282-325b-42a3-a254-8966cc3450f0"
+    },
+    {
+      "category": "Phase 3",
+      "name": "portalPendingApprovals",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 3",
+      "name": "approveMilestone",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Security",
+      "name": "portal cannot see other company project",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 4",
+      "name": "portal createChangeRequest",
+      "status": "PASS",
+      "detail": "25c84c4c-22f8-4bae-b9b4-e9b0dd11b352"
+    },
+    {
+      "category": "Phase 4",
+      "name": "transitionChangeRequest under_review",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Security",
+      "name": "team_member cannot submitImpactAssessment",
+      "status": "PASS",
+      "detail": "authorization_error"
+    },
+    {
+      "category": "Phase 4",
+      "name": "submitImpactAssessment dual approval",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 4",
+      "name": "decideChangeRequest internal approve",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 4",
+      "name": "decideChangeRequest client approve -> in_progress",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 4",
+      "name": "changeRequests + dashboard",
+      "status": "PASS",
+      "detail": "open=1"
+    },
+    {
+      "category": "Phase 4",
+      "name": "budget unchanged without applyFinancialImpact",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 5",
+      "name": "createRetentionSequence",
+      "status": "PASS",
+      "detail": "6367b0ad-bba5-464c-812f-722bdae906bf"
+    },
+    {
+      "category": "Phase 5",
+      "name": "addSequenceStep",
+      "status": "PASS",
+      "detail": "893fdd8a-22da-4142-9c36-cf2f6242bae4"
+    },
+    {
+      "category": "Phase 5",
+      "name": "enrollInSequence",
+      "status": "PASS",
+      "detail": "3768257d-47cc-4e91-ba2e-ca8d219251aa"
+    },
+    {
+      "category": "Phase 5",
+      "name": "processDueSequenceSteps",
+      "status": "PASS",
+      "detail": "created=1"
+    },
+    {
+      "category": "Phase 5",
+      "name": "upcomingTouchpoints",
+      "status": "PASS",
+      "detail": "count=1"
+    },
+    {
+      "category": "Phase 5",
+      "name": "completeTouchpoint",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 5",
+      "name": "retentionSequences query",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 5",
+      "name": "autoEnroll on_company_created",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 5",
+      "name": "autoEnroll on_project_completed",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Security",
+      "name": "portal cannot enroll in sequence",
+      "status": "PASS",
+      "detail": "authentication_error"
+    },
+    {
+      "category": "Phase 6",
+      "name": "createContract",
+      "status": "PASS",
+      "detail": "19b69626-a9e9-4559-bbce-68c1f886eb56"
+    },
+    {
+      "category": "Phase 6",
+      "name": "contracts query",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 6",
+      "name": "updateContract",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 6",
+      "name": "contractRenewalCheck",
+      "status": "PASS",
+      "detail": "enrolled=1"
+    },
+    {
+      "category": "Phase 6",
+      "name": "recalculateHealthScores",
+      "status": "PASS",
+      "detail": "scored=3"
+    },
+    {
+      "category": "Phase 6",
+      "name": "atRiskCompanies below threshold",
+      "status": "FAIL",
+      "detail": ""
+    },
+    {
+      "category": "Phase 6",
+      "name": "weeklyDigestEmail",
+      "status": "PASS",
+      "detail": "emails=0"
+    },
+    {
+      "category": "Phase 6",
+      "name": "deleteContract",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 6",
+      "name": "healthScoreHistory query",
+      "status": "PASS",
+      "detail": "history=2"
+    },
+    {
+      "category": "Security",
+      "name": "illegal CR transition rejected",
+      "status": "PASS",
+      "detail": "invalid_transition"
+    },
+    {
+      "category": "Security",
+      "name": "portal cannot resolve internal approval",
+      "status": "PASS",
+      "detail": "authorization_error"
+    },
+    {
+      "category": "Phase 2",
+      "name": "removeTaskDependency",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "removeTag",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Phase 1",
+      "name": "logout",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "category": "Cleanup",
+      "name": "database_and_assets",
+      "status": "PASS",
+      "detail": "removed org aae5aaf6-07b3-47aa-8d68-002aeefb973d"
+    }
+  ]
+}
