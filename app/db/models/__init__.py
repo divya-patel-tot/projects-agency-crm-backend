@@ -8,7 +8,7 @@ from app.db.models.company import Company
 from app.db.models.contact import Contact
 from app.db.models.contract import Contract
 from app.db.models.document import Document
-from app.db.models.notification import Notification
+from app.db.models.invoice import Invoice
 from app.db.models.organization import Organization
 from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
@@ -38,6 +38,7 @@ __all__ = [
     "EntityTag",
     "JobRun",
     "Milestone",
+    "Invoice",
     "Notification",
     "Organization",
     "Project",

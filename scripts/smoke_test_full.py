@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-End-to-end smoke test for Phases 0–6.
+End-to-end smoke test for Phases 0–7.
 
 Creates an isolated org, exercises CRUD + portal + approvals + documents +
 change requests (positive and negative security cases),
@@ -248,6 +248,7 @@ async def cleanup_smoke_data(report: SmokeReport, org_id: uuid.UUID, asset_paths
             report.add("Cleanup", f"asset:{rel_path}", "WARN", str(exc))
 
     tables = [
+        "invoices",
         "client_health_scores",
         "contracts",
         "change_request_attachments",
@@ -1689,6 +1690,173 @@ async def run_smoke(report: SmokeReport) -> None:
             )
         except Exception as exc:
             report.add("Phase 6", "healthScoreHistory query", "FAIL", str(exc))
+
+        # --- Phase 7: invoices, audit, GROQ assist, 2FA ---
+        try:
+            data = await gql(
+                client,
+                """
+                mutation($companyId: ID!, $projectId: ID!, $amount: Float!, $dueDate: Date!) {
+                  createInvoice(
+                    companyId: $companyId
+                    projectId: $projectId
+                    amount: $amount
+                    dueDate: $dueDate
+                    invoiceNumber: "SMOKE-INV-001"
+                    status: "sent"
+                  ) { id status amount invoiceNumber }
+                }
+                """,
+                variables={
+                    "companyId": ids["company_a"],
+                    "projectId": ids["project"],
+                    "amount": 2500.0,
+                    "dueDate": (date.today() + timedelta(days=30)).isoformat(),
+                },
+                token=admin_token,
+            )
+            ids["invoice"] = data["createInvoice"]["id"]
+            report.add("Phase 7", "createInvoice", "PASS", ids["invoice"])
+        except Exception as exc:
+            report.add("Phase 7", "createInvoice", "FAIL", str(exc))
+
+        if ids.get("invoice"):
+            try:
+                data = await gql(
+                    client,
+                    """
+                    query($companyId: ID!) {
+                      invoices(companyId: $companyId) { id status amount }
+                    }
+                    """,
+                    variables={"companyId": ids["company_a"]},
+                    token=admin_token,
+                )
+                assert any(i["id"] == ids["invoice"] for i in data["invoices"])
+                report.add("Phase 7", "invoices query", "PASS", f"count={len(data['invoices'])}")
+            except Exception as exc:
+                report.add("Phase 7", "invoices query", "FAIL", str(exc))
+
+            try:
+                paid = await gql(
+                    client,
+                    "mutation($id: ID!) { updateInvoice(id: $id, status: \"paid\") { id status paidAt } }",
+                    variables={"id": ids["invoice"]},
+                    token=admin_token,
+                )
+                assert paid["updateInvoice"]["status"] == "paid"
+                report.add("Phase 7", "updateInvoice paid", "PASS")
+            except Exception as exc:
+                report.add("Phase 7", "updateInvoice paid", "FAIL", str(exc))
+
+        try:
+            logs = await gql(
+                client,
+                "query { activityLogs(limit: 20) { id action entityType } }",
+                token=admin_token,
+            )
+            assert len(logs["activityLogs"]) >= 1
+            report.add("Phase 7", "activityLogs query", "PASS", f"count={len(logs['activityLogs'])}")
+        except Exception as exc:
+            report.add("Phase 7", "activityLogs query", "FAIL", str(exc))
+
+        try:
+            resp = await client.get(
+                "/exports/audit.csv",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            assert resp.status_code == 200
+            assert "entity_type" in resp.text.split("\n")[0]
+            report.add("Phase 7", "audit CSV export", "PASS")
+        except Exception as exc:
+            report.add("Phase 7", "audit CSV export", "FAIL", str(exc))
+
+        try:
+            import pyotp
+
+            totp_setup = await gql(
+                client,
+                "mutation { enableTotp { secret provisioningUri } }",
+                token=admin_token,
+            )
+            secret = totp_setup["enableTotp"]["secret"]
+            code = pyotp.TOTP(secret).now()
+            confirmed = await gql(
+                client,
+                "mutation($code: String!) { confirmTotp(code: $code) }",
+                variables={"code": code},
+                token=admin_token,
+            )
+            assert confirmed["confirmTotp"] is True
+            report.add("Phase 7", "enableTotp + confirmTotp", "PASS")
+        except Exception as exc:
+            report.add("Phase 7", "enableTotp + confirmTotp", "FAIL", str(exc))
+
+        try:
+            from unittest.mock import AsyncMock, patch
+
+            data = await gql(
+                client,
+                """
+                mutation($projectId: ID!) {
+                  createChangeRequest(
+                    projectId: $projectId
+                    title: "GROQ draft test"
+                    type: "scope_addition"
+                  ) { id status }
+                }
+                """,
+                variables={"projectId": ids["project"]},
+                token=admin_token,
+            )
+            draft_cr_id = data["createChangeRequest"]["id"]
+            await gql(
+                client,
+                "mutation($id: ID!) { transitionChangeRequest(id: $id, toStatus: \"under_review\") { id status } }",
+                variables={"id": draft_cr_id},
+                token=admin_token,
+            )
+            groq_payload = (
+                '{"impact_hours": 8, "impact_cost": 1200, "impact_timeline_days": 5, '
+                '"assessment_notes": "Smoke advisory draft"}'
+            )
+            with patch(
+                "app.graphql.change_requests.ai_assist.generate_text",
+                new_callable=AsyncMock,
+                return_value=groq_payload,
+            ):
+                draft = await gql(
+                    client,
+                    "mutation($id: ID!) { draftImpactAssessment(id: $id) { advisory impactHours assessmentNotes } }",
+                    variables={"id": draft_cr_id},
+                    token=admin_token,
+                )
+            assert draft["draftImpactAssessment"]["advisory"] is True
+            assert draft["draftImpactAssessment"]["impactHours"] == 8.0
+            report.add("Phase 7", "draftImpactAssessment", "PASS")
+        except Exception as exc:
+            report.add("Phase 7", "draftImpactAssessment", "FAIL", str(exc))
+
+        try:
+            from app.scheduler.jobs import flag_overdue_invoices
+
+            inv_result = await flag_overdue_invoices(run_date=date.today())
+            assert "flagged" in inv_result
+            report.add("Phase 7", "flagOverdueInvoices job", "PASS", f"flagged={inv_result['flagged']}")
+        except Exception as exc:
+            report.add("Phase 7", "flagOverdueInvoices job", "FAIL", str(exc))
+
+        try:
+            errors = await gql_expect_error(
+                client,
+                "query { invoices { id } }",
+                token=portal_token,
+            )
+            code = (errors[0].get("extensions") or {}).get("code", "")
+            assert code in ("authentication_error", "authorization_error")
+            report.add("Security", "portal cannot list invoices", "PASS", code)
+        except Exception as exc:
+            report.add("Security", "portal cannot list invoices", "FAIL", str(exc))
 
         # --- Phase 4 + Security: negative cases ---
         from sqlalchemy import select

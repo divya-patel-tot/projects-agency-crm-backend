@@ -15,6 +15,9 @@ from app.core.rate_limit import limiter
 from app.core.deps import get_graphql_context
 from app.scheduler.runner import start_scheduler, stop_scheduler
 from app.graphql.schema import schema
+from app.core.production import validate_production_settings
+from app.integrations.sentry import init_sentry
+from app.routes.audit_export import router as audit_export_router
 from app.routes.assets import router as assets_router
 from app.routes.graphql_swagger import create_graphql_swagger_router
 
@@ -26,6 +29,8 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        validate_production_settings(settings)
+        init_sentry(dsn=settings.sentry_dsn, environment=settings.environment, debug=settings.debug)
         configure_logging(debug=settings.debug)
         db_ok = await check_database_connection()
         logger.info(
@@ -125,6 +130,7 @@ def create_app() -> FastAPI:
     graphql_router = GraphQLRouter(schema, context_getter=get_graphql_context, graphql_ide=graphql_ide)
     app.include_router(graphql_router, prefix="/graphql")
     app.include_router(create_graphql_swagger_router(schema))
+    app.include_router(audit_export_router)
     app.include_router(assets_router)
 
     @app.get("/health", tags=["health"])

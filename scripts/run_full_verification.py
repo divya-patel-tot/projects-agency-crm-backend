@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run the complete automated verification pipeline for Phases 0–6.
+Run the complete automated verification pipeline for Phases 0–7.
 
 Steps (in order):
   1. Environment check (.env vs .env.example)
@@ -53,8 +53,9 @@ def main() -> int:
         ("Environment check", [python, "scripts/check_env.py"]),
         ("Assets storage check", [python, "scripts/check_assets_storage.py"]),
         ("Alembic upgrade head", [python, "-m", "alembic", "upgrade", "head"]),
+        ("Production readiness check", [python, "scripts/check_production.py"]),
         ("Pytest full suite", [python, "-m", "pytest", "tests/", "-v", "--tb=short"]),
-        ("Smoke test (Phases 0–6 + security)", [python, "scripts/smoke_test_full.py"]),
+        ("Smoke test (Phases 0–7 + security)", [python, "scripts/smoke_test_full.py"]),
     ]
 
     results: list[tuple[str, int]] = []

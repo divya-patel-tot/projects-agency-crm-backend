@@ -42,6 +42,7 @@ JOB_DEADLINE_REMINDERS = "project_deadline_reminders"
 JOB_RECALCULATE_HEALTH = "recalculate_health_scores"
 JOB_CONTRACT_RENEWAL = "contract_renewal_check"
 JOB_WEEKLY_DIGEST = "weekly_digest_email"
+JOB_FLAG_OVERDUE_INVOICES = "flag_overdue_invoices"
 
 
 async def _list_org_ids() -> list[UUID]:
@@ -387,6 +388,26 @@ async def weekly_digest_email(run_date: date | None = None) -> dict:
     return {"emails_sent": emails_sent}
 
 
+async def flag_overdue_invoices(run_date: date | None = None) -> dict:
+    today = run_date or date.today()
+    flagged = 0
+
+    for org_id in await _list_org_ids():
+        if not await _should_run_job(org_id, JOB_FLAG_OVERDUE_INVOICES, today):
+            continue
+        async with get_tenant_db(org_id) as db:
+            from app.db.enums import InvoiceStatus
+            from app.graphql.invoices.repository import list_overdue_candidates
+
+            for invoice in await list_overdue_candidates(db, as_of=today):
+                if invoice.status != InvoiceStatus.OVERDUE.value:
+                    invoice.status = InvoiceStatus.OVERDUE.value
+                    flagged += 1
+        await _record_job_run(org_id, JOB_FLAG_OVERDUE_INVOICES, today, detail=f"flagged={flagged}")
+
+    return {"flagged": flagged}
+
+
 JOB_REGISTRY = {
     JOB_PROCESS_DUE_STEPS: process_due_sequence_steps,
     JOB_FLAG_OVERDUE: flag_overdue_touchpoints,
@@ -395,4 +416,5 @@ JOB_REGISTRY = {
     JOB_RECALCULATE_HEALTH: recalculate_health_scores,
     JOB_CONTRACT_RENEWAL: contract_renewal_check,
     JOB_WEEKLY_DIGEST: weekly_digest_email,
+    JOB_FLAG_OVERDUE_INVOICES: flag_overdue_invoices,
 }

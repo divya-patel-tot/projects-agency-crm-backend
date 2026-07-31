@@ -2,12 +2,14 @@ import strawberry
 from strawberry.extensions import QueryDepthLimiter
 from strawberry.tools import merge_types
 
+from app.graphql.audit.schema import AuditQuery
 from app.graphql.auth.schema import AuthMutation
 from app.graphql.change_requests.schema import ChangeRequestMutation, ChangeRequestQuery
 from app.graphql.companies.schema import CompanyMutation, CompanyQuery
 from app.graphql.contacts.schema import ContactMutation, ContactQuery
 from app.graphql.contracts.schema import ContractMutation, ContractQuery
 from app.graphql.health.schema import HealthQuery
+from app.graphql.invoices.schema import InvoiceMutation, InvoiceQuery
 from app.graphql.planning.schema import PlanningMutation, PlanningQuery
 from app.graphql.portal.auth.schema import PortalAuthMutation
 from app.graphql.portal.schema import ApprovalMutation, DocumentMutation, DocumentQuery, PortalQuery
@@ -38,6 +40,8 @@ Query = merge_types(
         RetentionQuery,
         HealthQuery,
         ContractQuery,
+        InvoiceQuery,
+        AuditQuery,
     ),
 )
 
@@ -56,6 +60,7 @@ Mutation = merge_types(
         ChangeRequestMutation,
         RetentionMutation,
         ContractMutation,
+        InvoiceMutation,
     ),
 )
 

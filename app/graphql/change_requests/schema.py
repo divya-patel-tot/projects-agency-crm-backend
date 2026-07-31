@@ -19,6 +19,7 @@ from app.graphql.change_requests.service import (
     submit_impact_assessment,
     transition_change_request,
 )
+from app.graphql.change_requests.ai_assist import draft_impact_assessment as draft_impact_assessment_ai
 from app.graphql.portal.repository import get_project_for_company
 
 
@@ -81,6 +82,15 @@ class ChangeRequestType:
             submitted_at=cr.submitted_at,
             created_at=cr.created_at,
         )
+
+
+@strawberry.type
+class ImpactAssessmentDraftType:
+    impact_hours: float | None
+    impact_cost: float | None
+    impact_timeline_days: int | None
+    assessment_notes: str | None
+    advisory: bool = True
 
 
 @strawberry.type
@@ -278,6 +288,27 @@ class ChangeRequestMutation:
                 actor_id=ctx.user.id,
             )
             return ChangeRequestType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def draft_impact_assessment(self, info: Info, id: strawberry.ID) -> ImpactAssessmentDraftType | None:
+        ctx = require_role(info.context, "project_manager", "admin")
+        try:
+            draft = await draft_impact_assessment_ai(
+                ctx.db,
+                actor=ctx.user,
+                cr_id=UUID(str(id)),
+            )
+            if draft is None:
+                return None
+            return ImpactAssessmentDraftType(
+                impact_hours=draft.impact_hours,
+                impact_cost=draft.impact_cost,
+                impact_timeline_days=draft.impact_timeline_days,
+                assessment_notes=draft.assessment_notes,
+                advisory=True,
+            )
         except Exception as exc:
             _gql_error(exc)
 

@@ -13,11 +13,13 @@ from app.scheduler.jobs import (
     JOB_DEADLINE_REMINDERS,
     JOB_ESCALATE_CR,
     JOB_FLAG_OVERDUE,
+    JOB_FLAG_OVERDUE_INVOICES,
     JOB_PROCESS_DUE_STEPS,
     JOB_RECALCULATE_HEALTH,
     JOB_WEEKLY_DIGEST,
     contract_renewal_check,
     escalate_pending_change_requests,
+    flag_overdue_invoices,
     flag_overdue_touchpoints,
     process_due_sequence_steps,
     project_deadline_reminders,
@@ -45,6 +47,7 @@ def start_scheduler() -> AsyncIOScheduler | None:
     _scheduler.add_job(escalate_pending_change_requests, CronTrigger(hour=9, minute=30), id=JOB_ESCALATE_CR)
     _scheduler.add_job(project_deadline_reminders, CronTrigger(hour=7, minute=30), id=JOB_DEADLINE_REMINDERS)
     _scheduler.add_job(contract_renewal_check, CronTrigger(hour=8, minute=15), id=JOB_CONTRACT_RENEWAL)
+    _scheduler.add_job(flag_overdue_invoices, CronTrigger(hour=9, minute=15), id=JOB_FLAG_OVERDUE_INVOICES)
     _scheduler.add_job(recalculate_health_scores, CronTrigger(hour=2, minute=0), id=JOB_RECALCULATE_HEALTH)
     _scheduler.add_job(weekly_digest_email, CronTrigger(day_of_week="mon", hour=8, minute=0), id=JOB_WEEKLY_DIGEST)
     _scheduler.start()

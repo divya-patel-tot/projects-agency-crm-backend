@@ -8,7 +8,7 @@
 
 ---
 
-## Completed (Phases 0–6)
+## Completed (Phases 0–7)
 
 | Phase | Delivered |
 |-------|-----------|
@@ -19,6 +19,23 @@
 | 4 | Change requests, state machine, dual approval, dashboard |
 | 5 | Retention sequences, enrollments, touchpoints, APScheduler jobs, Gmail SMTP |
 | 6 | Health scores, contracts, at-risk dashboard, GROQ narration, renewal jobs |
+| 7 | Invoices, audit export, 2FA verify, GROQ CR draft, Sentry, prod checks, backups doc |
+
+**Verify:** `python scripts/run_full_verification.py`
+
+---
+
+## Phase 7 — Enterprise hardening ✅
+
+| Item | Delivered |
+|------|-----------|
+| Audit export | `activityLogs` GraphQL query + `GET /exports/audit.csv` (admin only) |
+| 2FA | TOTP enroll/confirm/login flow (wired in Phase 1, verified in Phase 7) |
+| Invoices | Migration 009, GraphQL CRUD, `flag_overdue_invoices` daily job |
+| Sentry | Optional `SENTRY_DSN` — init on startup when set |
+| GROQ assist | `draftImpactAssessment` mutation — advisory JSON, never auto-saved |
+| Backups | Manual `pg_dump` — see `scripts/BACKUP.md` |
+| Production checks | `scripts/check_production.py` + startup validation when `ENVIRONMENT=production` |
 
 **Verify:** `python scripts/run_full_verification.py`
 

@@ -25,3 +25,4 @@ async def write_activity_log(
             diff=diff,
         )
     )
+    await db.flush()
