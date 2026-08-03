@@ -13,7 +13,6 @@ from app.core.db import AsyncSessionLocal, get_tenant_db
 from app.db.enums import ChangeRequestStatus, EnrollmentStatus, TouchpointChannel, TouchpointStatus
 from app.db.models.change_request import ChangeRequest
 from app.db.models.company import Company
-from app.db.models.contact import Contact
 from app.db.models.organization import Organization
 from app.db.models.planning import Milestone, ProjectPhase, Task
 from app.db.models.project import Project
@@ -24,14 +23,12 @@ from app.graphql.contracts.repository import list_active_contracts_in_renewal_wi
 from app.graphql.health.service import get_at_risk_companies, get_primary_contact, recalculate_org_health_scores
 from app.graphql.org_settings import health_settings_from_dict
 from app.graphql.retention.repository import (
-    get_email_template,
     job_run_exists,
     list_active_enrollments,
     list_scheduled_touchpoints_past_due,
     list_steps_for_sequence,
 )
 from app.graphql.retention.service import enroll_renewal_sequences, materialize_due_touchpoint
-from app.integrations.smtp import render_template, send_email
 
 logger = logging.getLogger(__name__)
 
@@ -94,21 +91,22 @@ async def process_due_sequence_steps(run_date: date | None = None) -> dict:
                     if tp is None:
                         continue
                     created += 1
-                    if step.channel == TouchpointChannel.EMAIL.value and step.template_id:
-                        contact = await db.get(Contact, enrollment.contact_id)
-                        template = await get_email_template(db, step.template_id)
-                        if contact and template and contact.email:
-                            ctx = {
-                                "contact_first_name": contact.first_name,
-                                "contact_last_name": contact.last_name,
-                                "company_id": str(enrollment.company_id),
-                            }
-                            subject, body = render_template(template.subject, template.body, ctx)
-                            try:
-                                send_email(to=contact.email, subject=subject, body=body)
-                                emails += 1
-                            except Exception as exc:  # noqa: BLE001
-                                logger.warning("Email send failed touchpoint=%s: %s", tp.id, exc)
+                    # Mail disabled — retention EMAIL steps still materialize touchpoints but do not send.
+                    # if step.channel == TouchpointChannel.EMAIL.value and step.template_id:
+                    #     contact = await db.get(Contact, enrollment.contact_id)
+                    #     template = await get_email_template(db, step.template_id)
+                    #     if contact and template and contact.email:
+                    #         ctx = {
+                    #             "contact_first_name": contact.first_name,
+                    #             "contact_last_name": contact.last_name,
+                    #             "company_id": str(enrollment.company_id),
+                    #         }
+                    #         subject, body = render_template(template.subject, template.body, ctx)
+                    #         try:
+                    #             send_email(to=contact.email, subject=subject, body=body)
+                    #             emails += 1
+                    #         except Exception as exc:  # noqa: BLE001
+                    #             logger.warning("Email send failed touchpoint=%s: %s", tp.id, exc)
         await _record_job_run(org_id, JOB_PROCESS_DUE_STEPS, today, detail=f"created={created}")
 
     return {"touchpoints_created": created, "emails_sent": emails}
@@ -319,20 +317,21 @@ async def contract_renewal_check(run_date: date | None = None) -> dict:
                     )
                     notified += 1
 
-                    owner = await db.get(User, company.account_owner_id)
-                    if owner and owner.email:
-                        try:
-                            send_email(
-                                to=owner.email,
-                                subject=f"Contract renewal approaching: {company.name}",
-                                body=(
-                                    f"Contract '{contract.name}' for {company.name} ends in {days_left} days "
-                                    f"({contract.end_date.isoformat()}).\n\n"
-                                    "Please review renewal options. Clients are never auto-churned."
-                                ),
-                            )
-                        except Exception as exc:  # noqa: BLE001
-                            logger.warning("Renewal email failed company=%s: %s", company.id, exc)
+                    # Mail disabled — in-app notification above is still created.
+                    # owner = await db.get(User, company.account_owner_id)
+                    # if owner and owner.email:
+                    #     try:
+                    #         send_email(
+                    #             to=owner.email,
+                    #             subject=f"Contract renewal approaching: {company.name}",
+                    #             body=(
+                    #                 f"Contract '{contract.name}' for {company.name} ends in {days_left} days "
+                    #                 f"({contract.end_date.isoformat()}).\n\n"
+                    #                 "Please review renewal options. Clients are never auto-churned."
+                    #             ),
+                    #         )
+                    #     except Exception as exc:  # noqa: BLE001
+                    #         logger.warning("Renewal email failed company=%s: %s", company.id, exc)
 
         await _record_job_run(org_id, JOB_CONTRACT_RENEWAL, today, detail=f"enrolled={enrolled},notified={notified}")
 
@@ -340,52 +339,57 @@ async def contract_renewal_check(run_date: date | None = None) -> dict:
 
 
 async def weekly_digest_email(run_date: date | None = None) -> dict:
-    today = run_date or date.today()
-    emails_sent = 0
+    """Weekly at-risk digest — mail disabled; returns immediately without sending."""
+    _ = run_date
+    return {"emails_sent": 0}
 
-    for org_id in await _list_org_ids():
-        if not await _should_run_job(org_id, JOB_WEEKLY_DIGEST, today):
-            continue
-        async with get_tenant_db(org_id) as db:
-            org = await db.get(Organization, org_id)
-            settings = health_settings_from_dict(org.settings if org else {})
-            at_risk = await get_at_risk_companies(db, org_settings=settings)
-
-            if not at_risk:
-                await _record_job_run(org_id, JOB_WEEKLY_DIGEST, today, detail="no_at_risk")
-                continue
-
-            lines = [f"- {c.name}: health score {float(c.health_score):.1f}" for c in at_risk[:20]]
-            body = (
-                f"Weekly at-risk client digest for {org.name if org else org_id}\n\n"
-                f"{len(at_risk)} client(s) below threshold ({settings.at_risk_threshold}):\n"
-                + "\n".join(lines)
-                + "\n\nThis is an automated advisory digest."
-            )
-
-            result = await db.execute(
-                select(User).where(
-                    User.org_id == org_id,
-                    User.status == "active",
-                    User.role.in_(["admin", "account_manager"]),
-                )
-            )
-            for user in result.scalars().all():
-                if not user.email:
-                    continue
-                try:
-                    send_email(
-                        to=user.email,
-                        subject=f"Weekly at-risk clients ({len(at_risk)})",
-                        body=body,
-                    )
-                    emails_sent += 1
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Weekly digest email failed user=%s: %s", user.id, exc)
-
-        await _record_job_run(org_id, JOB_WEEKLY_DIGEST, today, detail=f"emails={emails_sent}")
-
-    return {"emails_sent": emails_sent}
+    # --- Mail implementation (disabled) ---
+    # today = run_date or date.today()
+    # emails_sent = 0
+    #
+    # for org_id in await _list_org_ids():
+    #     if not await _should_run_job(org_id, JOB_WEEKLY_DIGEST, today):
+    #         continue
+    #     async with get_tenant_db(org_id) as db:
+    #         org = await db.get(Organization, org_id)
+    #         settings = health_settings_from_dict(org.settings if org else {})
+    #         at_risk = await get_at_risk_companies(db, org_settings=settings)
+    #
+    #         if not at_risk:
+    #             await _record_job_run(org_id, JOB_WEEKLY_DIGEST, today, detail="no_at_risk")
+    #             continue
+    #
+    #         lines = [f"- {c.name}: health score {float(c.health_score):.1f}" for c in at_risk[:20]]
+    #         body = (
+    #             f"Weekly at-risk client digest for {org.name if org else org_id}\n\n"
+    #             f"{len(at_risk)} client(s) below threshold ({settings.at_risk_threshold}):\n"
+    #             + "\n".join(lines)
+    #             + "\n\nThis is an automated advisory digest."
+    #         )
+    #
+    #         result = await db.execute(
+    #             select(User).where(
+    #                 User.org_id == org_id,
+    #                 User.status == "active",
+    #                 User.role.in_(["admin", "account_manager"]),
+    #             )
+    #         )
+    #         for user in result.scalars().all():
+    #             if not user.email:
+    #                 continue
+    #             try:
+    #                 send_email(
+    #                     to=user.email,
+    #                     subject=f"Weekly at-risk clients ({len(at_risk)})",
+    #                     body=body,
+    #                 )
+    #                 emails_sent += 1
+    #             except Exception as exc:  # noqa: BLE001
+    #                 logger.warning("Weekly digest email failed user=%s: %s", user.id, exc)
+    #
+    #     await _record_job_run(org_id, JOB_WEEKLY_DIGEST, today, detail=f"emails={emails_sent}")
+    #
+    # return {"emails_sent": emails_sent}
 
 
 async def flag_overdue_invoices(run_date: date | None = None) -> dict:

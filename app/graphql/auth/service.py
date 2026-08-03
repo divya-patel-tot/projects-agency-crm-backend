@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import jwt
 from fastapi import Request
 
 from app.core.config import get_settings
+from app.core.db import AsyncSessionLocal, get_auth_db, get_tenant_db
 from app.core.deps import REFRESH_COOKIE_NAME, clear_refresh_cookie, set_refresh_cookie
 from app.core.exceptions import AuthenticationError, DomainError
 from app.core.security import (
@@ -17,11 +18,14 @@ from app.core.security import (
     decode_token,
     generate_totp_secret,
     get_totp_provisioning_uri,
+    hash_password,
     hash_refresh_token,
     verify_password,
     verify_refresh_token_hash,
     verify_totp_code,
 )
+from app.db.enums import UserRole, UserStatus
+from app.db.models.organization import Organization
 from app.db.models.user import User
 from app.graphql.auth.repository import (
     find_active_users_by_email,
@@ -49,7 +53,7 @@ def _check_auth_rate_limit(request: Request, bucket: str) -> None:
     settings = get_settings()
     storage_uri = "memory://"
     limiter = MovingWindowRateLimiter(storage_from_string(storage_uri))
-    rate = parse("10/minute" if bucket == "login" else "20/minute")
+    rate = parse("10/minute" if bucket == "login" else "5/minute" if bucket == "signup" else "20/minute")
     if not limiter.hit(rate, bucket, get_remote_address(request)):
         raise DomainError("Rate limit exceeded", code="rate_limit_exceeded")
 
@@ -80,6 +84,60 @@ async def login(db: AsyncSession, *, email: str, password: str, request: Request
         return AuthResult(requires_2fa=True, challenge_token=challenge)
     access, refresh = await _issue_tokens(db, user)
     return AuthResult(access_token=access, refresh_token=refresh)
+
+
+async def register_organization(
+    *,
+    organization_name: str,
+    full_name: str,
+    email: str,
+    password: str,
+    request: Request,
+) -> AuthResult:
+    """Create a new org + admin user, then issue session tokens (no email verification)."""
+    _check_auth_rate_limit(request, "signup")
+    normalized_email = email.lower().strip()
+    org_label = organization_name.strip()
+    display_name = full_name.strip()
+
+    if len(org_label) < 2:
+        raise DomainError("Organization name must be at least 2 characters.", code="bad_user_input")
+    if len(display_name) < 2:
+        raise DomainError("Full name must be at least 2 characters.", code="bad_user_input")
+    if len(password) < 12:
+        raise DomainError("Password must be at least 12 characters.", code="bad_user_input")
+
+    async with get_auth_db() as db:
+        existing = await find_active_users_by_email(db, normalized_email)
+        if existing:
+            raise DomainError("An account with this email already exists.", code="bad_user_input")
+
+    org_id = uuid4()
+    user_id = uuid4()
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            session.add(Organization(id=org_id, name=org_label, plan="trial", settings={}))
+
+    async with get_tenant_db(org_id) as db:
+        db.add(
+            User(
+                id=user_id,
+                org_id=org_id,
+                name=display_name,
+                email=normalized_email,
+                password_hash=hash_password(password),
+                role=UserRole.ADMIN.value,
+                status=UserStatus.ACTIVE.value,
+            )
+        )
+
+    async with get_auth_db() as db:
+        users = await find_active_users_by_email(db, normalized_email)
+        if len(users) != 1:
+            raise DomainError("Registration could not be completed.", code="domain_error")
+        access, refresh = await _issue_tokens(db, users[0])
+        return AuthResult(access_token=access, refresh_token=refresh)
 
 
 async def verify_totp_login(

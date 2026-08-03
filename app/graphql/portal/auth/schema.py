@@ -33,7 +33,12 @@ class PortalAuthMutation:
         ctx: GraphQLContext = info.context
         try:
             async with get_auth_db() as db:
-                result = await portal_login_service(db, email=email.lower(), password=password, request=ctx.request)
+                result = await portal_login_service(
+                    db,
+                    email=email.lower().strip(),
+                    password=password,
+                    request=ctx.request,
+                )
                 apply_portal_refresh_cookie(ctx.response, result.refresh_token)
                 return PortalAuthPayload(access_token=result.access_token)
         except Exception as exc:

@@ -15,6 +15,7 @@ from app.graphql.auth.service import (
     login as login_service,
     logout,
     refresh_session,
+    register_organization,
     verify_totp_login,
 )
 
@@ -54,6 +55,31 @@ class AuthMutation:
                     requires_2fa=result.requires_2fa,
                     challenge_token=result.challenge_token,
                 )
+        except Exception as exc:
+            _to_graphql_error(exc)
+
+    @strawberry.mutation
+    async def signup(
+        self,
+        info: Info,
+        organization_name: str,
+        full_name: str,
+        email: str,
+        password: str,
+    ) -> AuthPayload:
+        ctx: GraphQLContext = info.context
+        try:
+            result = await register_organization(
+                organization_name=organization_name,
+                full_name=full_name,
+                email=email,
+                password=password,
+                request=ctx.request,
+            )
+            if result.access_token and result.refresh_token:
+                apply_refresh_cookie(ctx.response, result.refresh_token)
+                return AuthPayload(access_token=result.access_token, requires_2fa=False)
+            return AuthPayload(access_token=None, requires_2fa=result.requires_2fa)
         except Exception as exc:
             _to_graphql_error(exc)
 

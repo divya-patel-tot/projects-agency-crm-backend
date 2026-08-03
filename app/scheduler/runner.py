@@ -16,7 +16,6 @@ from app.scheduler.jobs import (
     JOB_FLAG_OVERDUE_INVOICES,
     JOB_PROCESS_DUE_STEPS,
     JOB_RECALCULATE_HEALTH,
-    JOB_WEEKLY_DIGEST,
     contract_renewal_check,
     escalate_pending_change_requests,
     flag_overdue_invoices,
@@ -24,7 +23,6 @@ from app.scheduler.jobs import (
     process_due_sequence_steps,
     project_deadline_reminders,
     recalculate_health_scores,
-    weekly_digest_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,7 +47,8 @@ def start_scheduler() -> AsyncIOScheduler | None:
     _scheduler.add_job(contract_renewal_check, CronTrigger(hour=8, minute=15), id=JOB_CONTRACT_RENEWAL)
     _scheduler.add_job(flag_overdue_invoices, CronTrigger(hour=9, minute=15), id=JOB_FLAG_OVERDUE_INVOICES)
     _scheduler.add_job(recalculate_health_scores, CronTrigger(hour=2, minute=0), id=JOB_RECALCULATE_HEALTH)
-    _scheduler.add_job(weekly_digest_email, CronTrigger(day_of_week="mon", hour=8, minute=0), id=JOB_WEEKLY_DIGEST)
+    # Mail disabled — weekly digest is a no-op while EMAIL_FEATURES_ENABLED=false.
+    # _scheduler.add_job(weekly_digest_email, CronTrigger(day_of_week="mon", hour=8, minute=0), id=JOB_WEEKLY_DIGEST)
     _scheduler.start()
     logger.info("APScheduler started with %d jobs", len(_scheduler.get_jobs()))
     return _scheduler

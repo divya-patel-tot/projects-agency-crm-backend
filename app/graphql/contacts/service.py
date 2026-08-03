@@ -3,7 +3,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_activity_log
-from app.core.exceptions import NotFoundError
+from app.core.security import hash_password
+from app.core.exceptions import DomainError, NotFoundError
 from app.db.models.contact import Contact
 from app.db.models.user import User
 from app.graphql.contacts.repository import (
@@ -38,6 +39,26 @@ async def get_contact_by_id(db: AsyncSession, contact_id: UUID) -> Contact:
     return contact
 
 
+async def _apply_portal_password(contact: Contact, *, portal_access_enabled: bool, portal_password: str | None) -> None:
+    if portal_password:
+        if len(portal_password) < 12:
+            raise DomainError("Portal password must be at least 12 characters.", code="bad_user_input")
+        contact.password_hash = hash_password(portal_password)
+        return
+    if portal_access_enabled and not contact.password_hash:
+        raise DomainError(
+            "Set a portal password when enabling client portal access.",
+            code="bad_user_input",
+        )
+
+
+def _normalize_contact_email(email: str | None) -> str | None:
+    if email is None:
+        return None
+    normalized = email.strip().lower()
+    return normalized or None
+
+
 async def create_contact_record(
     db: AsyncSession,
     *,
@@ -53,6 +74,7 @@ async def create_contact_record(
     preferred_channel: str | None = None,
     timezone: str | None = None,
     portal_access_enabled: bool = False,
+    portal_password: str | None = None,
     linkedin_url: str | None = None,
     status: str = "active",
 ) -> Contact:
@@ -63,7 +85,7 @@ async def create_contact_record(
         company_id=company_id,
         first_name=first_name,
         last_name=last_name,
-        email=email,
+        email=_normalize_contact_email(email),
         phone=phone,
         title=title,
         department=department,
@@ -73,6 +95,11 @@ async def create_contact_record(
         portal_access_enabled=portal_access_enabled,
         linkedin_url=linkedin_url,
         status=status,
+    )
+    await _apply_portal_password(
+        contact,
+        portal_access_enabled=portal_access_enabled,
+        portal_password=portal_password,
     )
     await create_contact(db, contact)
     await write_activity_log(
@@ -99,6 +126,32 @@ async def create_contact_record(
     return contact
 
 
+async def set_contact_portal_password_record(
+    db: AsyncSession,
+    *,
+    actor: User,
+    contact_id: UUID,
+    password: str,
+) -> Contact:
+    if len(password) < 12:
+        raise DomainError("Portal password must be at least 12 characters.", code="bad_user_input")
+    contact = await get_contact_by_id(db, contact_id)
+    contact.password_hash = hash_password(password)
+    if not contact.portal_access_enabled:
+        contact.portal_access_enabled = True
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="update",
+        entity_type="contact",
+        entity_id=contact.id,
+        diff={"after": {"portal_access_enabled": True, "portal_password_set": True}},
+    )
+    return contact
+
+
 async def update_contact_record(
     db: AsyncSession,
     *,
@@ -110,9 +163,26 @@ async def update_contact_record(
     before = _contact_to_dict(contact)
     if updates.get("is_primary") is True:
         await unset_primary_for_company(db, contact.company_id, exclude_id=contact.id)
+
+    portal_password = updates.pop("portal_password", None)
+    if "email" in updates and updates["email"] is not None:
+        updates["email"] = _normalize_contact_email(updates["email"])
     for key, value in updates.items():
         if value is not None and hasattr(contact, key):
             setattr(contact, key, value)
+
+    if portal_password is not None:
+        await _apply_portal_password(
+            contact,
+            portal_access_enabled=contact.portal_access_enabled,
+            portal_password=portal_password,
+        )
+    elif contact.portal_access_enabled and not contact.password_hash:
+        raise DomainError(
+            "Set a portal password when enabling client portal access.",
+            code="bad_user_input",
+        )
+
     await db.flush()
     await write_activity_log(
         db,

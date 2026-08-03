@@ -11,7 +11,6 @@ from app.graphql.retention.service import (
     add_sequence_step as add_sequence_step_service,
     cancel_enrollment,
     complete_touchpoint,
-    create_email_template_record,
     create_sequence_record,
     duplicate_sequence_record,
     enroll_in_sequence,
@@ -292,17 +291,18 @@ class RetentionMutation:
         except Exception as exc:
             _gql_error(exc)
 
-    @strawberry.mutation
-    async def create_email_template(
-        self,
-        info: Info,
-        name: str,
-        subject: str,
-        body: str,
-    ) -> EmailTemplateType:
-        ctx = require_role(info.context, "admin", "account_manager")
-        try:
-            row = await create_email_template_record(ctx.db, actor=ctx.user, name=name, subject=subject, body=body)
-            return EmailTemplateType.from_model(row)
-        except Exception as exc:
-            _gql_error(exc)
+    # Mail disabled — email templates are not exposed via GraphQL while EMAIL_FEATURES_ENABLED=false.
+    # @strawberry.mutation
+    # async def create_email_template(
+    #     self,
+    #     info: Info,
+    #     name: str,
+    #     subject: str,
+    #     body: str,
+    # ) -> EmailTemplateType:
+    #     ctx = require_role(info.context, "admin", "account_manager")
+    #     try:
+    #         row = await create_email_template_record(ctx.db, actor=ctx.user, name=name, subject=subject, body=body)
+    #         return EmailTemplateType.from_model(row)
+    #     except Exception as exc:
+    #         _gql_error(exc)

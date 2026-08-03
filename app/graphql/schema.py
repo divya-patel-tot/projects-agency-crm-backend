@@ -16,6 +16,9 @@ from app.graphql.portal.schema import ApprovalMutation, DocumentMutation, Docume
 from app.graphql.projects.schema import ProjectMutation, ProjectQuery
 from app.graphql.retention.schema import RetentionMutation, RetentionQuery
 from app.graphql.tags.schema import TagMutation, TagQuery
+from app.graphql.users.schema import UserMutation, UserQuery
+from app.graphql.extensions.request_logging import GraphQLRequestLoggingExtension
+from app.graphql.viewer.schema import ViewerQuery
 
 
 @strawberry.type
@@ -32,6 +35,7 @@ Query = merge_types(
         CompanyQuery,
         ContactQuery,
         TagQuery,
+        UserQuery,
         ProjectQuery,
         PlanningQuery,
         PortalQuery,
@@ -42,6 +46,7 @@ Query = merge_types(
         ContractQuery,
         InvoiceQuery,
         AuditQuery,
+        ViewerQuery,
     ),
 )
 
@@ -61,11 +66,15 @@ Mutation = merge_types(
         RetentionMutation,
         ContractMutation,
         InvoiceMutation,
+        UserMutation,
     ),
 )
 
 schema = strawberry.Schema(
     query=Query,
     mutation=Mutation,
-    extensions=[lambda: QueryDepthLimiter(max_depth=10)],
+    extensions=[
+        lambda: QueryDepthLimiter(max_depth=10),
+        GraphQLRequestLoggingExtension,
+    ],
 )

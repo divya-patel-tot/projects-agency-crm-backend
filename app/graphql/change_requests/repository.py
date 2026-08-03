@@ -40,6 +40,22 @@ async def list_change_requests(
     return list(result.scalars().all())
 
 
+async def list_change_requests_for_company(
+    db: AsyncSession,
+    *,
+    company_id: UUID,
+) -> list[ChangeRequest]:
+    result = await db.execute(
+        select(ChangeRequest)
+        .where(
+            ChangeRequest.company_id == company_id,
+            ChangeRequest.deleted_at.is_(None),
+        )
+        .order_by(ChangeRequest.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def create_change_request_row(db: AsyncSession, row: ChangeRequest) -> ChangeRequest:
     db.add(row)
     await db.flush()

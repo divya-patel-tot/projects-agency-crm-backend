@@ -32,6 +32,18 @@ async def get_approval_by_id(db: AsyncSession, approval_id: UUID) -> Approval | 
     return await db.get(Approval, approval_id)
 
 
+async def list_approvals_for_milestone(db: AsyncSession, milestone_id: UUID) -> list[Approval]:
+    result = await db.execute(
+        select(Approval)
+        .where(
+            Approval.entity_type == EntityType.MILESTONE.value,
+            Approval.entity_id == milestone_id,
+        )
+        .order_by(Approval.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
 async def get_milestone_for_company(db: AsyncSession, *, milestone_id: UUID, company_id: UUID) -> Milestone | None:
     result = await db.execute(
         select(Milestone)

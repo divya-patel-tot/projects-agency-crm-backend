@@ -1,14 +1,17 @@
 from uuid import UUID
 
 import strawberry
+from graphql import GraphQLError
 from strawberry.types import Info
 
-from app.core.deps import require_authenticated
+from app.core.deps import require_authenticated, require_role
+from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.graphql.contacts.service import (
     create_contact_record,
     delete_contact_record,
     get_contact_by_id,
     get_contacts,
+    set_contact_portal_password_record,
     update_contact_record,
 )
 
@@ -68,6 +71,12 @@ class ContactQuery:
         return ContactType.from_model(row)
 
 
+def _gql_error(exc: Exception) -> None:
+    if isinstance(exc, (DomainError, NotFoundError, AuthorizationError)):
+        raise GraphQLError(exc.message, extensions={"code": exc.code}) from exc
+    raise exc
+
+
 @strawberry.type
 class ContactMutation:
     @strawberry.mutation
@@ -85,28 +94,33 @@ class ContactMutation:
         preferred_channel: str | None = None,
         timezone: str | None = None,
         portal_access_enabled: bool = False,
+        portal_password: str | None = None,
         linkedin_url: str | None = None,
         status: str = "active",
     ) -> ContactType:
-        ctx = require_authenticated(info.context)
-        row = await create_contact_record(
-            ctx.db,
-            actor=ctx.user,
-            company_id=UUID(str(company_id)),
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            phone=phone,
-            title=title,
-            department=department,
-            is_primary=is_primary,
-            preferred_channel=preferred_channel,
-            timezone=timezone,
-            portal_access_enabled=portal_access_enabled,
-            linkedin_url=linkedin_url,
-            status=status,
-        )
-        return ContactType.from_model(row)
+        ctx = require_role(info.context, "admin", "account_manager")
+        try:
+            row = await create_contact_record(
+                ctx.db,
+                actor=ctx.user,
+                company_id=UUID(str(company_id)),
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                phone=phone,
+                title=title,
+                department=department,
+                is_primary=is_primary,
+                preferred_channel=preferred_channel,
+                timezone=timezone,
+                portal_access_enabled=portal_access_enabled,
+                portal_password=portal_password,
+                linkedin_url=linkedin_url,
+                status=status,
+            )
+            return ContactType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
 
     @strawberry.mutation
     async def update_contact(
@@ -123,10 +137,11 @@ class ContactMutation:
         preferred_channel: str | None = None,
         timezone: str | None = None,
         portal_access_enabled: bool | None = None,
+        portal_password: str | None = None,
         linkedin_url: str | None = None,
         status: str | None = None,
     ) -> ContactType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "account_manager")
         updates = {
             "first_name": first_name,
             "last_name": last_name,
@@ -138,6 +153,7 @@ class ContactMutation:
             "preferred_channel": preferred_channel,
             "timezone": timezone,
             "portal_access_enabled": portal_access_enabled,
+            "portal_password": portal_password,
             "linkedin_url": linkedin_url,
             "status": status,
         }
@@ -149,8 +165,24 @@ class ContactMutation:
         )
         return ContactType.from_model(row)
 
+    @strawberry.mutation(description="Set or reset a contact's portal login password.")
+    async def set_contact_portal_password(
+        self,
+        info: Info,
+        id: strawberry.ID,
+        password: str,
+    ) -> ContactType:
+        ctx = require_role(info.context, "admin", "account_manager")
+        row = await set_contact_portal_password_record(
+            ctx.db,
+            actor=ctx.user,
+            contact_id=UUID(str(id)),
+            password=password,
+        )
+        return ContactType.from_model(row)
+
     @strawberry.mutation
     async def delete_contact(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "account_manager")
         await delete_contact_record(ctx.db, actor=ctx.user, contact_id=UUID(str(id)))
         return True

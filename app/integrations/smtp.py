@@ -19,6 +19,9 @@ def render_template(subject: str, body: str, context: dict) -> tuple[str, str]:
 
 def send_email(*, to: str, subject: str, body: str, html: bool = False) -> None:
     settings = get_settings()
+    if not settings.email_features_enabled:
+        logger.info("Email features disabled — skipped send to %s (subject=%s)", to, subject)
+        return
     if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
         logger.warning("SMTP not configured — email to %s skipped (subject=%s)", to, subject)
         return

@@ -1,9 +1,13 @@
 from uuid import UUID
 
 import strawberry
+from sqlalchemy import func, select
 from strawberry.types import Info
 
-from app.core.deps import GraphQLContext, require_authenticated
+from app.core.deps import GraphQLContext, require_authenticated, require_role
+from app.db.models.contact import Contact
+from app.db.models.project import Project
+from app.db.models.user import User
 from app.graphql.companies.service import (
     create_company_record,
     delete_company_record,
@@ -13,6 +17,7 @@ from app.graphql.companies.service import (
 )
 from app.graphql.contacts.schema import ContactType
 from app.graphql.loaders import get_contacts_by_company_loader
+from app.graphql.users.schema import UserSummaryType
 
 
 @strawberry.type
@@ -31,6 +36,45 @@ class CompanyType:
         loader = get_contacts_by_company_loader(info.context)
         rows = await loader.load(UUID(str(self.id)))
         return [ContactType.from_model(row) for row in rows]
+
+    @strawberry.field
+    async def account_owner(self, info: Info) -> UserSummaryType | None:
+        if self.account_owner_id is None or info.context.db is None:
+            return None
+        user = await info.context.db.get(User, UUID(str(self.account_owner_id)))
+        if user is None or user.deleted_at is not None:
+            return None
+        return UserSummaryType.from_model(user)
+
+    @strawberry.field
+    async def primary_contact(self, info: Info) -> ContactType | None:
+        contacts = await self.contacts(info)
+        if not contacts:
+            return None
+        primary = next((c for c in contacts if c.is_primary), None)
+        return primary or contacts[0]
+
+    @strawberry.field
+    async def contact_count(self, info: Info) -> int:
+        if info.context.db is None:
+            return 0
+        result = await info.context.db.execute(
+            select(func.count())
+            .select_from(Contact)
+            .where(Contact.company_id == UUID(str(self.id)), Contact.deleted_at.is_(None))
+        )
+        return int(result.scalar_one())
+
+    @strawberry.field
+    async def project_count(self, info: Info) -> int:
+        if info.context.db is None:
+            return 0
+        result = await info.context.db.execute(
+            select(func.count())
+            .select_from(Project)
+            .where(Project.company_id == UUID(str(self.id)), Project.deleted_at.is_(None))
+        )
+        return int(result.scalar_one())
 
 
 def company_from_model(company) -> CompanyType:
@@ -78,7 +122,7 @@ class CompanyMutation:
         account_owner_id: strawberry.ID | None = None,
         health_score: float | None = None,
     ) -> CompanyType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "account_manager")
         row = await create_company_record(
             ctx.db,
             actor=ctx.user,
@@ -105,7 +149,7 @@ class CompanyMutation:
         account_owner_id: strawberry.ID | None = None,
         health_score: float | None = None,
     ) -> CompanyType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "account_manager")
         updates = {
             "name": name,
             "industry": industry,
@@ -120,6 +164,6 @@ class CompanyMutation:
 
     @strawberry.mutation
     async def delete_company(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "account_manager")
         await delete_company_record(ctx.db, actor=ctx.user, company_id=UUID(str(id)))
         return True

@@ -4,7 +4,7 @@ import strawberry
 from graphql import GraphQLError
 from strawberry.types import Info
 
-from app.core.deps import require_authenticated
+from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
 from app.graphql.loaders import get_phases_by_project_loader, get_tasks_by_project_loader
 from app.graphql.planning.schema import PhaseType, TaskType
@@ -100,7 +100,7 @@ class ProjectMutation:
         budget: float | None = None,
         health: str | None = "on_track",
     ) -> ProjectType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
         try:
             row = await create_project_record(
                 ctx.db,

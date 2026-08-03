@@ -1,3 +1,4 @@
+import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -72,18 +73,49 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
 
-    cors_allow_headers = (
-        ["Content-Type", "Authorization", "X-Request-ID"]
-        if settings.is_production
-        else ["*"]
-    )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=cors_allow_headers,
-    )
+    if settings.cors_allow_all_origins:
+        # Browsers reject Allow-Origin: * with credentials; regex reflects the request Origin.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=r".*",
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        cors_allow_headers = (
+            ["Content-Type", "Authorization", "X-Request-ID"]
+            if settings.is_production
+            else ["*"]
+        )
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins_list,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=cors_allow_headers,
+        )
+
+    @app.middleware("http")
+    async def request_logging_middleware(request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = round((time.perf_counter() - start) * 1000, 2)
+        if request.url.path.startswith(("/graphql", "/health", "/assets", "/audit")):
+            auth = request.headers.get("Authorization")
+            logger.info(
+                "HTTP request",
+                extra={
+                    "extra_data": {
+                        "method": request.method,
+                        "path": request.url.path,
+                        "status": response.status_code,
+                        "duration_ms": duration_ms,
+                        "authenticated": bool(auth and auth.lower().startswith("bearer ")),
+                    }
+                },
+            )
+        return response
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):

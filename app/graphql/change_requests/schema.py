@@ -20,6 +20,7 @@ from app.graphql.change_requests.service import (
     transition_change_request,
 )
 from app.graphql.change_requests.ai_assist import draft_impact_assessment as draft_impact_assessment_ai
+from app.graphql.change_requests.repository import list_approvals_for_cr
 from app.graphql.portal.repository import get_project_for_company
 
 
@@ -27,6 +28,27 @@ def _gql_error(exc: Exception) -> None:
     if isinstance(exc, (DomainError, NotFoundError)):
         raise GraphQLError(exc.message, extensions={"code": exc.code}) from exc
     raise exc
+
+
+@strawberry.type
+class ChangeRequestApprovalType:
+    id: strawberry.ID
+    approver_type: str
+    status: str
+    comment: str | None
+    decided_at: datetime | None
+    approver_name: str | None
+
+    @classmethod
+    def from_model(cls, approval) -> "ChangeRequestApprovalType":
+        return cls(
+            id=strawberry.ID(str(approval.id)),
+            approver_type=approval.approver_type.upper(),
+            status=approval.status.upper(),
+            comment=approval.comment,
+            decided_at=approval.decided_at,
+            approver_name=None,
+        )
 
 
 @strawberry.type
@@ -53,6 +75,7 @@ class ChangeRequestType:
     desired_due_date: date | None
     submitted_at: datetime | None
     created_at: datetime
+    updated_at: datetime
 
     @classmethod
     def from_model(cls, cr) -> "ChangeRequestType":
@@ -81,7 +104,13 @@ class ChangeRequestType:
             desired_due_date=cr.desired_due_date,
             submitted_at=cr.submitted_at,
             created_at=cr.created_at,
+            updated_at=cr.updated_at,
         )
+
+    @strawberry.field
+    async def approvals(self, info: Info) -> list[ChangeRequestApprovalType]:
+        rows = await list_approvals_for_cr(info.context.db, UUID(str(self.id)))
+        return [ChangeRequestApprovalType.from_model(row) for row in rows]
 
 
 @strawberry.type

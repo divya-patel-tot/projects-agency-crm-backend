@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
 
     enable_scheduler: bool = False
+    # Mail is disabled by default — set EMAIL_FEATURES_ENABLED=true to turn SMTP jobs back on.
+    email_features_enabled: bool = False
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_user: str | None = None
@@ -70,6 +72,11 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def cors_allow_all_origins(self) -> bool:
+        """True when CORS_ALLOWED_ORIGINS is * (local dev — reflects any Origin header)."""
+        return self.cors_allowed_origins.strip() == "*"
 
     @property
     def is_production(self) -> bool:

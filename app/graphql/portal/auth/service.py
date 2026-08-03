@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import logging
 from uuid import UUID
 
 import jwt
@@ -26,6 +27,8 @@ from app.db.models.contact import Contact
 from app.graphql.auth.repository import find_valid_refresh_token, revoke_refresh_token, store_refresh_token
 from app.graphql.portal.auth.repository import find_portal_contact_by_email
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -74,10 +77,16 @@ async def _issue_portal_tokens(db: AsyncSession, contact: Contact) -> tuple[str,
 
 async def portal_login(db: AsyncSession, *, email: str, password: str, request: Request) -> PortalAuthResult:
     _check_portal_rate_limit(request, "login")
-    contact = await find_portal_contact_by_email(db, email)
-    if contact is None or not contact.password_hash:
+    normalized_email = email.lower().strip()
+    contact = await find_portal_contact_by_email(db, normalized_email)
+    if contact is None:
+        logger.warning("Portal login failed: no active portal contact for email=%s", normalized_email)
+        raise AuthenticationError("Invalid credentials")
+    if not contact.password_hash:
+        logger.warning("Portal login failed: portal password not set contact_id=%s", contact.id)
         raise AuthenticationError("Invalid credentials")
     if not verify_password(password, contact.password_hash):
+        logger.warning("Portal login failed: password mismatch contact_id=%s", contact.id)
         raise AuthenticationError("Invalid credentials")
     access, refresh = await _issue_portal_tokens(db, contact)
     return PortalAuthResult(access_token=access, refresh_token=refresh)
