@@ -29,5 +29,6 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     totp_backup_codes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
 
     organization: Mapped["Organization"] = relationship(back_populates="users")

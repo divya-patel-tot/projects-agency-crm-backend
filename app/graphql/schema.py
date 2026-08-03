@@ -13,6 +13,7 @@ from app.graphql.invoices.schema import InvoiceMutation, InvoiceQuery
 from app.graphql.planning.schema import PlanningMutation, PlanningQuery
 from app.graphql.portal.auth.schema import PortalAuthMutation
 from app.graphql.portal.schema import ApprovalMutation, DocumentMutation, DocumentQuery, PortalQuery
+from app.graphql.profile.schema import ProfileMutation, ProfileQuery
 from app.graphql.projects.schema import ProjectMutation, ProjectQuery
 from app.graphql.retention.schema import RetentionMutation, RetentionQuery
 from app.graphql.tags.schema import TagMutation, TagQuery
@@ -47,6 +48,7 @@ Query = merge_types(
         InvoiceQuery,
         AuditQuery,
         ViewerQuery,
+        ProfileQuery,
     ),
 )
 
@@ -67,6 +69,7 @@ Mutation = merge_types(
         ContractMutation,
         InvoiceMutation,
         UserMutation,
+        ProfileMutation,
     ),
 )
 

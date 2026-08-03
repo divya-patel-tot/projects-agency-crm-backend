@@ -1,7 +1,7 @@
 import uuid
 
 from sqlalchemy import Boolean, ForeignKey, Index, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.enums import ContactStatus
@@ -32,5 +32,6 @@ class Contact(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, SoftDel
     password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
     linkedin_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=ContactStatus.ACTIVE.value)
+    preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
 
     company: Mapped["Company"] = relationship(back_populates="contacts")
