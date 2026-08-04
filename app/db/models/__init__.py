@@ -9,6 +9,7 @@ from app.db.models.contact import Contact
 from app.db.models.contract import Contract
 from app.db.models.document import Document
 from app.db.models.invoice import Invoice
+from app.db.models.lookup import CompanySize, Industry
 from app.db.models.organization import Organization
 from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
@@ -31,11 +32,13 @@ __all__ = [
     "ChangeRequestAttachment",
     "ClientHealthScore",
     "Company",
+    "CompanySize",
     "Contact",
     "Contract",
     "Document",
     "EmailTemplate",
     "EntityTag",
+    "Industry",
     "JobRun",
     "Milestone",
     "Invoice",

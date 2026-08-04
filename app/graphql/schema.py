@@ -10,6 +10,7 @@ from app.graphql.contacts.schema import ContactMutation, ContactQuery
 from app.graphql.contracts.schema import ContractMutation, ContractQuery
 from app.graphql.health.schema import HealthQuery
 from app.graphql.invoices.schema import InvoiceMutation, InvoiceQuery
+from app.graphql.lookups.schema import LookupQuery
 from app.graphql.planning.schema import PlanningMutation, PlanningQuery
 from app.graphql.portal.auth.schema import PortalAuthMutation
 from app.graphql.portal.schema import ApprovalMutation, DocumentMutation, DocumentQuery, PortalQuery
@@ -36,6 +37,7 @@ Query = merge_types(
         CompanyQuery,
         ContactQuery,
         TagQuery,
+        LookupQuery,
         UserQuery,
         ProjectQuery,
         PlanningQuery,

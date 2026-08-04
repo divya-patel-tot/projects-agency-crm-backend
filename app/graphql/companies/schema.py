@@ -27,6 +27,9 @@ class CompanyType:
     industry: str | None = None
     website: str | None = None
     logo_url: str | None = None
+    size: str | None = None
+    timezone: str | None = None
+    address: strawberry.scalars.JSON | None = None
     status: str
     account_owner_id: strawberry.ID | None = None
     health_score: float | None = None
@@ -84,6 +87,9 @@ def company_from_model(company) -> CompanyType:
         industry=company.industry,
         website=company.website,
         logo_url=company.logo_url,
+        size=company.size,
+        timezone=company.timezone,
+        address=company.address,
         status=company.status,
         account_owner_id=strawberry.ID(str(company.account_owner_id)) if company.account_owner_id else None,
         health_score=float(company.health_score) if company.health_score is not None else None,
@@ -118,6 +124,9 @@ class CompanyMutation:
         industry: str | None = None,
         website: str | None = None,
         logo_url: str | None = None,
+        size: str | None = None,
+        timezone: str | None = None,
+        address: strawberry.scalars.JSON | None = None,
         status: str = "lead",
         account_owner_id: strawberry.ID | None = None,
         health_score: float | None = None,
@@ -130,6 +139,9 @@ class CompanyMutation:
             industry=industry,
             website=website,
             logo_url=logo_url,
+            size=size,
+            timezone=timezone,
+            address=address,
             status=status,
             account_owner_id=UUID(str(account_owner_id)) if account_owner_id else None,
             health_score=health_score,
@@ -145,6 +157,9 @@ class CompanyMutation:
         industry: str | None = None,
         website: str | None = None,
         logo_url: str | None = None,
+        size: str | None = None,
+        timezone: str | None = None,
+        address: strawberry.scalars.JSON | None = None,
         status: str | None = None,
         account_owner_id: strawberry.ID | None = None,
         health_score: float | None = None,
@@ -155,6 +170,9 @@ class CompanyMutation:
             "industry": industry,
             "website": website,
             "logo_url": logo_url,
+            "size": size,
+            "timezone": timezone,
+            "address": address,
             "status": status,
             "account_owner_id": UUID(str(account_owner_id)) if account_owner_id else None,
             "health_score": health_score,

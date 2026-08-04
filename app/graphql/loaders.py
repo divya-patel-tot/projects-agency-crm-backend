@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from strawberry.dataloader import DataLoader
 
 from app.db.enums import EntityType
+from app.db.models.lookup import CompanySize, Industry
 from app.db.models.tag import EntityTag, Tag
 from app.graphql.contacts.repository import get_contacts_by_company_ids
 from app.graphql.planning.repository import (
@@ -117,6 +118,16 @@ def get_dependencies_by_task_loader(context) -> DataLoader:
 
 async def list_tags(db: AsyncSession) -> list[Tag]:
     result = await db.execute(select(Tag).order_by(Tag.name))
+    return list(result.scalars().all())
+
+
+async def list_company_sizes(db: AsyncSession) -> list[CompanySize]:
+    result = await db.execute(select(CompanySize).order_by(CompanySize.sort_order))
+    return list(result.scalars().all())
+
+
+async def list_industries(db: AsyncSession) -> list[Industry]:
+    result = await db.execute(select(Industry).order_by(Industry.sort_order))
     return list(result.scalars().all())
 
 

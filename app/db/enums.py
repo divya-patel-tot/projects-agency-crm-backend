@@ -91,6 +91,28 @@ class ProjectHealth(StrEnum):
     DELAYED = "delayed"
 
 
+class Currency(StrEnum):
+    """ISO 4217 codes — uppercase, unlike other enums here, to match the
+    external standard (and Intl.NumberFormat's `currency` option)."""
+
+    GBP = "GBP"
+    USD = "USD"
+    EUR = "EUR"
+    CAD = "CAD"
+    AUD = "AUD"
+    NZD = "NZD"
+    CHF = "CHF"
+    JPY = "JPY"
+    SEK = "SEK"
+    NOK = "NOK"
+    DKK = "DKK"
+    SGD = "SGD"
+    HKD = "HKD"
+    AED = "AED"
+    INR = "INR"
+    ZAR = "ZAR"
+
+
 class PhaseStatus(StrEnum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"

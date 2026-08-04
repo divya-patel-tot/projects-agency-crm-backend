@@ -5,7 +5,7 @@ from sqlalchemy import Date, ForeignKey, Index, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.enums import ProjectHealth, ProjectStatus
+from app.db.enums import Currency, ProjectHealth, ProjectStatus
 from app.db.models.base import Base, OrgScopedMixin, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -26,6 +26,7 @@ class Project(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, SoftDel
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     budget: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     actual_cost: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default=Currency.GBP.value)
     health: Mapped[str | None] = mapped_column(String(32), nullable=True, default=ProjectHealth.ON_TRACK.value)
 
     phases: Mapped[list["ProjectPhase"]] = relationship(back_populates="project")

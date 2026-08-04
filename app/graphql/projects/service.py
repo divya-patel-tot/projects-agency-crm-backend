@@ -18,6 +18,7 @@ def _project_to_dict(project: Project) -> dict:
         "status": project.status,
         "health": project.health,
         "budget": float(project.budget) if project.budget is not None else None,
+        "currency": project.currency,
     }
 
 
@@ -46,6 +47,7 @@ async def create_project_record(
     end_date=None,
     budget: float | None = None,
     actual_cost: float | None = None,
+    currency: str = "GBP",
     health: str | None = "on_track",
 ) -> Project:
     project = Project(
@@ -60,6 +62,7 @@ async def create_project_record(
         end_date=end_date,
         budget=budget,
         actual_cost=actual_cost,
+        currency=currency,
         health=health,
     )
     await create_project(db, project)

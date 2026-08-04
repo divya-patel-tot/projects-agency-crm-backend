@@ -34,6 +34,7 @@ class ProjectType:
     project_manager_id: strawberry.ID | None
     budget: float | None
     actual_cost: float | None
+    currency: str
     health: str | None
 
     @classmethod
@@ -50,6 +51,7 @@ class ProjectType:
             else None,
             budget=float(project.budget) if project.budget is not None else None,
             actual_cost=float(project.actual_cost) if project.actual_cost is not None else None,
+            currency=project.currency,
             health=project.health,
         )
 
@@ -98,6 +100,7 @@ class ProjectMutation:
         priority: str | None = None,
         project_manager_id: strawberry.ID | None = None,
         budget: float | None = None,
+        currency: str = "GBP",
         health: str | None = "on_track",
     ) -> ProjectType:
         ctx = require_role(info.context, "admin", "account_manager", "project_manager")
@@ -112,6 +115,7 @@ class ProjectMutation:
                 priority=priority,
                 project_manager_id=UUID(str(project_manager_id)) if project_manager_id else None,
                 budget=budget,
+                currency=currency,
                 health=health,
             )
             return ProjectType.from_model(row)
@@ -128,6 +132,7 @@ class ProjectMutation:
         status: str | None = None,
         priority: str | None = None,
         budget: float | None = None,
+        currency: str | None = None,
         health: str | None = None,
     ) -> ProjectType:
         ctx = require_authenticated(info.context)
@@ -142,6 +147,7 @@ class ProjectMutation:
                     "status": status,
                     "priority": priority,
                     "budget": budget,
+                    "currency": currency,
                     "health": health,
                 },
             )

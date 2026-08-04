@@ -14,6 +14,7 @@ from app.graphql.change_requests.service import (
     get_change_request,
     get_change_request_dashboard,
     get_change_requests,
+    get_response_due_at,
     list_portal_cr_approvals,
     portal_resubmit_change_request,
     submit_impact_assessment,
@@ -76,6 +77,7 @@ class ChangeRequestType:
     submitted_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    _org_id: strawberry.Private[UUID]
 
     @classmethod
     def from_model(cls, cr) -> "ChangeRequestType":
@@ -105,12 +107,27 @@ class ChangeRequestType:
             submitted_at=cr.submitted_at,
             created_at=cr.created_at,
             updated_at=cr.updated_at,
+            _org_id=cr.org_id,
         )
 
     @strawberry.field
     async def approvals(self, info: Info) -> list[ChangeRequestApprovalType]:
         rows = await list_approvals_for_cr(info.context.db, UUID(str(self.id)))
         return [ChangeRequestApprovalType.from_model(row) for row in rows]
+
+    @strawberry.field
+    async def response_due_at(self, info: Info) -> datetime | None:
+        due_at, _ = await get_response_due_at(
+            info.context.db, org_id=self._org_id, status=self.status, submitted_at=self.submitted_at
+        )
+        return due_at
+
+    @strawberry.field
+    async def is_overdue(self, info: Info) -> bool:
+        _, overdue = await get_response_due_at(
+            info.context.db, org_id=self._org_id, status=self.status, submitted_at=self.submitted_at
+        )
+        return overdue
 
 
 @strawberry.type

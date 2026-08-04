@@ -564,5 +564,32 @@ async def get_change_request_dashboard(db: AsyncSession, *, org_id: UUID) -> dic
     return await dashboard_aggregates(db, org_id=org_id, sla_days=org_settings.response_sla_days)
 
 
+# Statuses where the change request is awaiting a response — matches the overdue
+# definition in repository.dashboard_aggregates (ON_HOLD deliberately excluded,
+# same as the frontend's RESPONSE_SLA_DAYS keys: a parked request has no clock).
+RESPONSE_SLA_STATUSES = frozenset(
+    {
+        ChangeRequestStatus.SUBMITTED.value,
+        ChangeRequestStatus.UNDER_REVIEW.value,
+        ChangeRequestStatus.PENDING_IMPACT_ASSESSMENT.value,
+        ChangeRequestStatus.PENDING_APPROVAL.value,
+    }
+)
+
+
+async def get_response_due_at(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    status: str,
+    submitted_at: datetime | None,
+) -> tuple[datetime | None, bool]:
+    if status not in RESPONSE_SLA_STATUSES or submitted_at is None:
+        return None, False
+    org_settings = await _load_org_cr_settings(db, org_id)
+    due_at = submitted_at + timedelta(days=org_settings.response_sla_days)
+    return due_at, datetime.now(UTC) > due_at
+
+
 async def list_portal_cr_approvals(db: AsyncSession, *, company_id: UUID):
     return await list_pending_client_cr_approvals(db, company_id=company_id)
