@@ -17,6 +17,7 @@ from app.graphql.portal.schema import ApprovalMutation, DocumentMutation, Docume
 from app.graphql.profile.schema import ProfileMutation, ProfileQuery
 from app.graphql.projects.schema import ProjectMutation, ProjectQuery
 from app.graphql.retention.schema import RetentionMutation, RetentionQuery
+from app.graphql.search.schema import SearchQuery
 from app.graphql.tags.schema import TagMutation, TagQuery
 from app.graphql.users.schema import UserMutation, UserQuery
 from app.graphql.extensions.request_logging import GraphQLRequestLoggingExtension
@@ -45,6 +46,7 @@ Query = merge_types(
         DocumentQuery,
         ChangeRequestQuery,
         RetentionQuery,
+        SearchQuery,
         HealthQuery,
         ContractQuery,
         InvoiceQuery,
