@@ -7,7 +7,7 @@ from strawberry.types import Info
 from app.core.deps import GraphQLContext, require_authenticated
 from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.models.user import User
-from app.graphql.users.service import create_user_record, update_user_record
+from app.graphql.users.service import create_user_record, delete_user_record, update_user_record
 from sqlalchemy import select
 
 
@@ -104,5 +104,14 @@ class UserMutation:
                 status=status,
             )
             return UserSummaryType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation(description="Permanently delete a team member (admin only). Cannot be undone.")
+    async def delete_user(self, info: Info, id: strawberry.ID) -> bool:
+        ctx: GraphQLContext = require_authenticated(info.context)
+        try:
+            await delete_user_record(ctx.db, actor=ctx.user, user_id=UUID(str(id)))
+            return True
         except Exception as exc:
             _gql_error(exc)

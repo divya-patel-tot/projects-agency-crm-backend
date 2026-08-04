@@ -1,11 +1,19 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_activity_log
 from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.enums import UserRole, UserStatus
+from app.db.models.activity_log import ActivityLog
+from app.db.models.auth import RefreshToken
+from app.db.models.change_request import ChangeRequest
+from app.db.models.company import Company
+from app.db.models.notification import Notification
+from app.db.models.planning import Task
+from app.db.models.project import Project
+from app.db.models.retention import Touchpoint
 from app.db.models.user import User
 from app.core.security import hash_password
 
@@ -127,3 +135,62 @@ async def update_user_record(
         diff={"before": before, "after": {"name": user.name, "role": user.role, "status": user.status}},
     )
     return user
+
+
+async def delete_user_record(db: AsyncSession, *, actor: User, user_id: UUID) -> None:
+    """Permanently remove a team member — distinct from `status: inactive`
+    (which just disables login). Nullable references to the user (project
+    manager, task assignee, etc.) are cleared so the records they're on
+    survive; their own sessions, notifications, and activity-log entries are
+    removed with them, since nothing keeps those meaningful once the user is
+    gone.
+    """
+    if actor.role != UserRole.ADMIN.value:
+        raise AuthorizationError("Only admins can delete team members")
+    if user_id == actor.id:
+        raise DomainError("You cannot delete your own account.", code="bad_user_input")
+
+    user = await _get_org_user(db, user_id, actor.org_id)
+    before = {"id": str(user.id), "name": user.name, "email": user.email, "role": user.role}
+    org_id = actor.org_id
+
+    await db.execute(
+        sa_update(Project)
+        .where(Project.org_id == org_id, Project.project_manager_id == user_id)
+        .values(project_manager_id=None)
+    )
+    await db.execute(
+        sa_update(Task).where(Task.org_id == org_id, Task.assignee_id == user_id).values(assignee_id=None)
+    )
+    await db.execute(
+        sa_update(ChangeRequest)
+        .where(ChangeRequest.org_id == org_id, ChangeRequest.assigned_pm_id == user_id)
+        .values(assigned_pm_id=None)
+    )
+    await db.execute(
+        sa_update(Touchpoint)
+        .where(Touchpoint.org_id == org_id, Touchpoint.created_by == user_id)
+        .values(created_by=None)
+    )
+    await db.execute(
+        sa_update(Company)
+        .where(Company.org_id == org_id, Company.account_owner_id == user_id)
+        .values(account_owner_id=None)
+    )
+
+    await db.execute(sa_delete(RefreshToken).where(RefreshToken.user_id == user_id))
+    await db.execute(sa_delete(Notification).where(Notification.user_id == user_id))
+    await db.execute(sa_delete(ActivityLog).where(ActivityLog.org_id == org_id, ActivityLog.actor_id == user_id))
+
+    await db.delete(user)
+    await db.flush()
+
+    await write_activity_log(
+        db,
+        org_id=org_id,
+        actor_id=actor.id,
+        action="delete",
+        entity_type="user",
+        entity_id=user_id,
+        diff={"before": before},
+    )
