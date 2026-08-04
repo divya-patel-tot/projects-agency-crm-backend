@@ -550,6 +550,41 @@ async def portal_resubmit_change_request(
     return cr
 
 
+async def assign_change_request(
+    db: AsyncSession,
+    *,
+    actor: User,
+    cr_id: UUID,
+    assigned_pm_id: UUID | None,
+) -> ChangeRequest:
+    if actor.role not in {"project_manager", "admin"}:
+        raise AuthorizationError("Only PM or admin can assign a change request")
+
+    cr = await get_change_request(db, cr_id)
+    if cr is None:
+        raise NotFoundError("Change request not found")
+
+    if assigned_pm_id is not None:
+        pm = await db.get(User, assigned_pm_id)
+        if pm is None or pm.deleted_at is not None or pm.org_id != actor.org_id:
+            raise NotFoundError("User not found")
+
+    before_pm_id = str(cr.assigned_pm_id) if cr.assigned_pm_id else None
+    cr.assigned_pm_id = assigned_pm_id
+    await db.flush()
+    after_pm_id = str(assigned_pm_id) if assigned_pm_id else None
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="assign",
+        entity_type=EntityType.CHANGE_REQUEST.value,
+        entity_id=cr.id,
+        diff={"before": {"assigned_pm_id": before_pm_id}, "after": {"assigned_pm_id": after_pm_id}},
+    )
+    return cr
+
+
 async def get_change_requests(
     db: AsyncSession,
     *,

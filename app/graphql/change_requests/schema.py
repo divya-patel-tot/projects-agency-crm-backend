@@ -9,6 +9,7 @@ from app.core.deps import require_authenticated, require_portal, require_role
 from app.core.exceptions import DomainError, NotFoundError
 from app.core.security import ActorType
 from app.graphql.change_requests.service import (
+    assign_change_request,
     create_change_request,
     decide_change_request,
     get_change_request,
@@ -189,6 +190,25 @@ class ChangeRequestQuery:
 
 @strawberry.type
 class ChangeRequestMutation:
+    @strawberry.mutation(description="Assign or unassign the internal PM responsible for this request.")
+    async def assign_change_request(
+        self,
+        info: Info,
+        id: strawberry.ID,
+        assigned_pm_id: strawberry.ID | None = None,
+    ) -> ChangeRequestType:
+        ctx = require_role(info.context, "project_manager", "admin")
+        try:
+            row = await assign_change_request(
+                ctx.db,
+                actor=ctx.user,
+                cr_id=UUID(str(id)),
+                assigned_pm_id=UUID(str(assigned_pm_id)) if assigned_pm_id else None,
+            )
+            return ChangeRequestType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
     @strawberry.mutation
     async def transition_change_request(
         self,
