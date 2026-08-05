@@ -3,10 +3,15 @@ from uuid import UUID
 
 import strawberry
 from graphql import GraphQLError
+from sqlalchemy import func, select
 from strawberry.types import Info
 
 from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
+from app.db.enums import EnrollmentStatus
+from app.db.models.retention import RetentionEnrollment
+from app.graphql.companies.schema import CompanyType, company_from_model
+from app.graphql.contacts.schema import ContactType
 from app.graphql.retention.service import (
     add_sequence_step as add_sequence_step_service,
     cancel_enrollment,
@@ -93,6 +98,27 @@ class RetentionSequenceType:
         rows = await list_steps_for_sequence(ctx.db, UUID(str(self.id)))
         return [SequenceStepType.from_model(r) for r in rows]
 
+    @strawberry.field
+    async def enrollments(self, info: Info) -> list["RetentionEnrollmentType"]:
+        from app.graphql.retention.repository import list_enrollments_for_sequence
+
+        ctx = require_authenticated(info.context)
+        rows = await list_enrollments_for_sequence(ctx.db, UUID(str(self.id)))
+        return [RetentionEnrollmentType.from_model(r) for r in rows]
+
+    @strawberry.field
+    async def active_enrollment_count(self, info: Info) -> int:
+        ctx = require_authenticated(info.context)
+        result = await ctx.db.execute(
+            select(func.count())
+            .select_from(RetentionEnrollment)
+            .where(
+                RetentionEnrollment.sequence_id == UUID(str(self.id)),
+                RetentionEnrollment.status == EnrollmentStatus.ACTIVE.value,
+            )
+        )
+        return int(result.scalar_one())
+
 
 @strawberry.type
 class RetentionEnrollmentType:
@@ -117,6 +143,34 @@ class RetentionEnrollmentType:
             current_step=row.current_step,
             enrolled_at=row.enrolled_at,
         )
+
+    @strawberry.field
+    async def sequence(self, info: Info) -> "RetentionSequenceType | None":
+        from app.graphql.retention.repository import get_sequence
+
+        ctx = require_authenticated(info.context)
+        row = await get_sequence(ctx.db, UUID(str(self.sequence_id)))
+        return RetentionSequenceType.from_model(row) if row else None
+
+    @strawberry.field
+    async def company(self, info: Info) -> CompanyType | None:
+        from app.db.models.company import Company
+
+        ctx = require_authenticated(info.context)
+        company = await ctx.db.get(Company, UUID(str(self.company_id)))
+        if company is None or company.deleted_at is not None:
+            return None
+        return company_from_model(company)
+
+    @strawberry.field
+    async def contact(self, info: Info) -> ContactType | None:
+        from app.db.models.contact import Contact
+
+        ctx = require_authenticated(info.context)
+        contact = await ctx.db.get(Contact, UUID(str(self.contact_id)))
+        if contact is None or contact.deleted_at is not None:
+            return None
+        return ContactType.from_model(contact)
 
 
 @strawberry.type

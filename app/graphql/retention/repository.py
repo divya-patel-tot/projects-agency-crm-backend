@@ -107,6 +107,15 @@ async def list_upcoming_touchpoints(
     return list(result.scalars().all())
 
 
+async def list_enrollments_for_sequence(db: AsyncSession, sequence_id: UUID) -> list[RetentionEnrollment]:
+    result = await db.execute(
+        select(RetentionEnrollment)
+        .where(RetentionEnrollment.sequence_id == sequence_id)
+        .order_by(RetentionEnrollment.enrolled_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def list_active_enrollments(db: AsyncSession) -> list[RetentionEnrollment]:
     result = await db.execute(
         select(RetentionEnrollment)
