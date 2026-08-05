@@ -88,7 +88,7 @@ class ContractMutation:
         auto_renew: bool = False,
         status: str = "draft",
     ) -> ContractType:
-        ctx = require_role(info.context, "admin", "account_manager", "finance_admin")
+        ctx = require_role(info.context, "admin", "finance_admin")
         try:
             row = await create_contract_record(
                 ctx.db,
@@ -117,7 +117,7 @@ class ContractMutation:
         auto_renew: bool | None = None,
         status: str | None = None,
     ) -> ContractType:
-        ctx = require_role(info.context, "admin", "account_manager", "finance_admin")
+        ctx = require_role(info.context, "admin", "finance_admin")
         try:
             row = await update_contract_record(
                 ctx.db,
@@ -136,7 +136,7 @@ class ContractMutation:
 
     @strawberry.mutation
     async def delete_contract(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_role(info.context, "admin", "account_manager", "finance_admin")
+        ctx = require_role(info.context, "admin", "finance_admin")
         try:
             return await delete_contract_record(ctx.db, actor=ctx.user, contract_id=UUID(str(id)))
         except Exception as exc:

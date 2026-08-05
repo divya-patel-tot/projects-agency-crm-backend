@@ -131,7 +131,7 @@ class CompanyMutation:
         account_owner_id: strawberry.ID | None = None,
         health_score: float | None = None,
     ) -> CompanyType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         row = await create_company_record(
             ctx.db,
             actor=ctx.user,
@@ -164,7 +164,7 @@ class CompanyMutation:
         account_owner_id: strawberry.ID | None = None,
         health_score: float | None = None,
     ) -> CompanyType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         updates = {
             "name": name,
             "industry": industry,
@@ -182,6 +182,6 @@ class CompanyMutation:
 
     @strawberry.mutation
     async def delete_company(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         await delete_company_record(ctx.db, actor=ctx.user, company_id=UUID(str(id)))
         return True

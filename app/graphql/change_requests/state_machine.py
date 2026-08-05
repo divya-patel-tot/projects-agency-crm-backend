@@ -181,7 +181,7 @@ def compute_approval_requirements(
 def actor_from_internal_role(role: str) -> TransitionActor:
     if role == "admin":
         return TransitionActor.INTERNAL_ADMIN
-    if role in {"project_manager", "account_manager"}:
+    if role == "project_manager":
         return TransitionActor.INTERNAL_PM
     return TransitionActor.INTERNAL_OTHER
 

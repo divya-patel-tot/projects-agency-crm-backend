@@ -1,4 +1,4 @@
-"""Scheduled jobs — async, per-org with RLS. Idempotent via job_runs + DB constraints."""
+﻿"""Scheduled jobs â€” async, per-org with RLS. Idempotent via job_runs + DB constraints."""
 
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ async def process_due_sequence_steps(run_date: date | None = None) -> dict:
                     if tp is None:
                         continue
                     created += 1
-                    # Mail disabled — retention EMAIL steps still materialize touchpoints but do not send.
+                    # Mail disabled â€” retention EMAIL steps still materialize touchpoints but do not send.
                     # if step.channel == TouchpointChannel.EMAIL.value and step.template_id:
                     #     contact = await db.get(Contact, enrollment.contact_id)
                     #     template = await get_email_template(db, step.template_id)
@@ -311,13 +311,13 @@ async def contract_renewal_check(run_date: date | None = None) -> dict:
                         title=f"Contract renewal approaching: {company.name}",
                         message=(
                             f"Contract '{contract.name}' for {company.name} ends in {days_left} days "
-                            f"({contract.end_date.isoformat()}). Review renewal — never auto-churn."
+                            f"({contract.end_date.isoformat()}). Review renewal â€” never auto-churn."
                         ),
                         link=f"/companies/{company.id}/contracts",
                     )
                     notified += 1
 
-                    # Mail disabled — in-app notification above is still created.
+                    # Mail disabled â€” in-app notification above is still created.
                     # owner = await db.get(User, company.account_owner_id)
                     # if owner and owner.email:
                     #     try:
@@ -339,7 +339,7 @@ async def contract_renewal_check(run_date: date | None = None) -> dict:
 
 
 async def weekly_digest_email(run_date: date | None = None) -> dict:
-    """Weekly at-risk digest — mail disabled; returns immediately without sending."""
+    """Weekly at-risk digest â€” mail disabled; returns immediately without sending."""
     _ = run_date
     return {"emails_sent": 0}
 
@@ -371,7 +371,7 @@ async def weekly_digest_email(run_date: date | None = None) -> dict:
     #             select(User).where(
     #                 User.org_id == org_id,
     #                 User.status == "active",
-    #                 User.role.in_(["admin", "account_manager"]),
+    #                 User.role.in_(["admin"]),
     #             )
     #         )
     #         for user in result.scalars().all():

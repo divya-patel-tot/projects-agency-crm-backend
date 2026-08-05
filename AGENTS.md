@@ -37,7 +37,7 @@ role, wherever that's practical.
 deleted_at unless noted)
 - organizations: name, plan, settings(jsonb)
 - users: org_id, name, email, password_hash, role, avatar_url, status
-  role enum: admin, account_manager, project_manager, team_member, finance_admin, executive_viewer
+  role enum: admin, project_manager, team_member, finance_admin, executive_viewer
 - companies: name, industry, website, logo_url, address(jsonb), size, timezone,
   status(lead/active/paused/churned), account_owner_id, health_score
 - contacts: company_id, first_name, last_name, email, phone, title, department,

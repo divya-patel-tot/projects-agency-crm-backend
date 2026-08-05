@@ -255,7 +255,7 @@ class RetentionMutation:
         trigger_type: str = "manual",
         is_template: bool = False,
     ) -> RetentionSequenceType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await create_sequence_record(
                 ctx.db,
@@ -270,7 +270,7 @@ class RetentionMutation:
 
     @strawberry.mutation
     async def duplicate_retention_sequence(self, info: Info, sequence_id: strawberry.ID) -> RetentionSequenceType:
-        ctx = require_role(info.context, "admin", "account_manager")
+        ctx = require_role(info.context, "admin")
         try:
             row = await duplicate_sequence_record(ctx.db, actor=ctx.user, sequence_id=UUID(str(sequence_id)))
             return RetentionSequenceType.from_model(row)
@@ -286,7 +286,7 @@ class RetentionMutation:
         trigger_type: str | None = None,
         is_active: bool | None = None,
     ) -> RetentionSequenceType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await update_sequence_record(
                 ctx.db,
@@ -300,7 +300,7 @@ class RetentionMutation:
 
     @strawberry.mutation
     async def remove_sequence_step(self, info: Info, step_id: strawberry.ID) -> bool:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             await remove_sequence_step_service(ctx.db, actor=ctx.user, step_id=UUID(str(step_id)))
             return True
@@ -317,7 +317,7 @@ class RetentionMutation:
         template_id: strawberry.ID | None = None,
         assignee_role: str | None = None,
     ) -> SequenceStepType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await add_sequence_step_service(
                 ctx.db,
@@ -341,7 +341,7 @@ class RetentionMutation:
         contact_id: strawberry.ID,
         project_id: strawberry.ID | None = None,
     ) -> RetentionEnrollmentType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await enroll_in_sequence(
                 ctx.db,
@@ -357,7 +357,7 @@ class RetentionMutation:
 
     @strawberry.mutation
     async def cancel_enrollment(self, info: Info, enrollment_id: strawberry.ID) -> RetentionEnrollmentType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await cancel_enrollment(ctx.db, actor=ctx.user, enrollment_id=UUID(str(enrollment_id)))
             return RetentionEnrollmentType.from_model(row)
@@ -372,7 +372,7 @@ class RetentionMutation:
         outcome: str | None = None,
         notes: str | None = None,
     ) -> TouchpointType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await complete_touchpoint(
                 ctx.db,
@@ -387,7 +387,7 @@ class RetentionMutation:
 
     @strawberry.mutation
     async def skip_touchpoint(self, info: Info, id: strawberry.ID, notes: str | None = None) -> TouchpointType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await skip_touchpoint(ctx.db, actor=ctx.user, touchpoint_id=UUID(str(id)), notes=notes)
             return TouchpointType.from_model(row)
@@ -406,7 +406,7 @@ class RetentionMutation:
         project_id: strawberry.ID | None = None,
         occurred_at: datetime | None = None,
     ) -> TouchpointType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await log_touchpoint_service(
                 ctx.db,
@@ -432,7 +432,7 @@ class RetentionMutation:
     #     subject: str,
     #     body: str,
     # ) -> EmailTemplateType:
-    #     ctx = require_role(info.context, "admin", "account_manager")
+    #     ctx = require_role(info.context, "admin")
     #     try:
     #         row = await create_email_template_record(ctx.db, actor=ctx.user, name=name, subject=subject, body=body)
     #         return EmailTemplateType.from_model(row)

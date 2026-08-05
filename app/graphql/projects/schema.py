@@ -115,7 +115,7 @@ class ProjectMutation:
         currency: str = "GBP",
         health: str | None = "on_track",
     ) -> ProjectType:
-        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await create_project_record(
                 ctx.db,

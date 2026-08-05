@@ -64,7 +64,7 @@ class InvoiceQuery:
         status: str | None = None,
     ) -> list[InvoiceType]:
         ctx = require_role(
-            info.context, "admin", "finance_admin", "account_manager", "executive_viewer", "project_manager"
+            info.context, "admin", "finance_admin", "executive_viewer", "project_manager"
         )
         rows = await get_invoices(
             ctx.db,
@@ -77,7 +77,7 @@ class InvoiceQuery:
     @strawberry.field
     async def invoice(self, info: Info, id: strawberry.ID) -> InvoiceType | None:
         ctx = require_role(
-            info.context, "admin", "finance_admin", "account_manager", "executive_viewer", "project_manager"
+            info.context, "admin", "finance_admin", "executive_viewer", "project_manager"
         )
         try:
             row = await get_invoice_by_id(ctx.db, UUID(str(id)))
