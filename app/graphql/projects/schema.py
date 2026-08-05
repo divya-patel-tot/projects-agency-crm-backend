@@ -15,6 +15,7 @@ from app.graphql.projects.service import (
     get_projects,
     update_project_record,
 )
+from app.graphql.users.schema import UserSummaryType
 
 
 def _gql_error(exc: Exception) -> None:
@@ -54,6 +55,17 @@ class ProjectType:
             currency=project.currency,
             health=project.health,
         )
+
+    @strawberry.field
+    async def project_manager(self, info: Info) -> UserSummaryType | None:
+        from app.db.models.user import User
+
+        if self.project_manager_id is None or info.context.db is None:
+            return None
+        user = await info.context.db.get(User, UUID(str(self.project_manager_id)))
+        if user is None or user.deleted_at is not None:
+            return None
+        return UserSummaryType.from_model(user)
 
     @strawberry.field
     async def phases(self, info: Info) -> list[PhaseType]:
@@ -131,6 +143,7 @@ class ProjectMutation:
         description: str | None = None,
         status: str | None = None,
         priority: str | None = None,
+        project_manager_id: strawberry.ID | None = None,
         budget: float | None = None,
         currency: str | None = None,
         health: str | None = None,
@@ -146,6 +159,7 @@ class ProjectMutation:
                     "description": description,
                     "status": status,
                     "priority": priority,
+                    "project_manager_id": UUID(str(project_manager_id)) if project_manager_id else None,
                     "budget": budget,
                     "currency": currency,
                     "health": health,

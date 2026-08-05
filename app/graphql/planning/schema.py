@@ -15,6 +15,7 @@ from app.graphql.loaders import (
     get_tasks_by_phase_loader,
 )
 from app.graphql.planning.repository import list_milestones_for_phase, list_phases_for_project
+from app.graphql.users.schema import UserSummaryType
 from app.graphql.planning.service import (
     add_task_dependency_record,
     create_milestone_record,
@@ -87,6 +88,17 @@ class TaskType:
             estimated_hours=float(task.estimated_hours) if task.estimated_hours is not None else None,
             actual_hours=float(task.actual_hours) if task.actual_hours is not None else None,
         )
+
+    @strawberry.field
+    async def assignee(self, info: Info) -> UserSummaryType | None:
+        from app.db.models.user import User
+
+        if self.assignee_id is None or info.context.db is None:
+            return None
+        user = await info.context.db.get(User, UUID(str(self.assignee_id)))
+        if user is None or user.deleted_at is not None:
+            return None
+        return UserSummaryType.from_model(user)
 
     @strawberry.field
     async def subtasks(self, info: Info) -> list["TaskType"]:
@@ -415,6 +427,7 @@ class PlanningMutation:
         title: str | None = None,
         status: str | None = None,
         priority: str | None = None,
+        assignee_id: strawberry.ID | None = None,
         estimated_hours: float | None = None,
         actual_hours: float | None = None,
     ) -> TaskType:
@@ -428,6 +441,7 @@ class PlanningMutation:
                     "title": title,
                     "status": status,
                     "priority": priority,
+                    "assignee_id": UUID(str(assignee_id)) if assignee_id else None,
                     "estimated_hours": estimated_hours,
                     "actual_hours": actual_hours,
                 },

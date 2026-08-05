@@ -125,6 +125,15 @@ async def list_active_enrollments(db: AsyncSession) -> list[RetentionEnrollment]
     return list(result.scalars().unique().all())
 
 
+async def list_touchpoints_for_company(db: AsyncSession, company_id: UUID) -> list[Touchpoint]:
+    result = await db.execute(
+        select(Touchpoint)
+        .where(Touchpoint.company_id == company_id)
+        .order_by(Touchpoint.scheduled_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def get_email_template(db: AsyncSession, template_id: UUID) -> EmailTemplate | None:
     result = await db.execute(
         select(EmailTemplate).where(

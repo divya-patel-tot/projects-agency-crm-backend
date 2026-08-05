@@ -1,6 +1,17 @@
+import asyncio
+import sys
 import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
+
+if sys.platform == "win32":
+    # Windows defaults to ProactorEventLoop, which has known issues bridging
+    # asyncpg's greenlet-based async calls under uvicorn --reload — it
+    # manifests as intermittent "greenlet_spawn has not been called" errors
+    # on mutations that do a read-then-write. SelectorEventLoop doesn't have
+    # this problem. No-op on Linux/Mac (the deploy target), where the default
+    # loop is already fine.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware

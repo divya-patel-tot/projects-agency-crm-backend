@@ -34,6 +34,7 @@ from app.graphql.retention.repository import (
     has_active_enrollment_for_sequence,
     list_sequences,
     list_steps_for_sequence,
+    list_touchpoints_for_company,
     list_upcoming_touchpoints,
     touchpoint_exists_for_step,
 )
@@ -166,6 +167,19 @@ async def add_sequence_step(
     db.add(step)
     await db.flush()
     return step
+
+
+async def remove_sequence_step(
+    db: AsyncSession,
+    *,
+    actor: User,
+    step_id: UUID,
+) -> None:
+    step = await get_step(db, step_id)
+    if step is None:
+        raise NotFoundError("Step not found")
+    await db.delete(step)
+    await db.flush()
 
 
 async def reorder_sequence_steps(
@@ -398,8 +412,56 @@ async def skip_touchpoint(db: AsyncSession, *, actor: User, touchpoint_id: UUID,
     return tp
 
 
+async def log_touchpoint(
+    db: AsyncSession,
+    *,
+    actor: User,
+    company_id: UUID,
+    contact_id: UUID,
+    type: str,
+    outcome: str | None = None,
+    notes: str | None = None,
+    project_id: UUID | None = None,
+    occurred_at: datetime | None = None,
+) -> Touchpoint:
+    """Records a touchpoint that already happened — a call made, a meeting held —
+    rather than one scheduled ahead by a sequence step. Both `enrollment_id` and
+    `sequence_step_id` stay null; that's how a manual log is told apart from an
+    automated one."""
+    now = datetime.now(UTC)
+    when = occurred_at or now
+    tp = Touchpoint(
+        org_id=actor.org_id,
+        company_id=company_id,
+        contact_id=contact_id,
+        project_id=project_id,
+        type=type,
+        scheduled_at=when,
+        completed_at=when,
+        status=TouchpointStatus.COMPLETED.value,
+        outcome=outcome or TouchpointOutcome.NEUTRAL.value,
+        notes=notes,
+    )
+    db.add(tp)
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="create",
+        entity_type="touchpoint",
+        entity_id=tp.id,
+        diff={"after": {"type": tp.type, "outcome": tp.outcome, "company_id": str(company_id)}},
+    )
+    return tp
+
+
 async def get_upcoming_touchpoints(db: AsyncSession) -> list[Touchpoint]:
     return await list_upcoming_touchpoints(db)
+
+
+async def get_touchpoints_for_company(db: AsyncSession, company_id: UUID) -> list[Touchpoint]:
+    return await list_touchpoints_for_company(db, company_id)
 
 
 async def create_email_template_record(

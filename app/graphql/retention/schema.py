@@ -20,8 +20,11 @@ from app.graphql.retention.service import (
     duplicate_sequence_record,
     enroll_in_sequence,
     get_retention_sequence,
+    get_touchpoints_for_company,
     get_upcoming_touchpoints,
     list_retention_sequences,
+    log_touchpoint as log_touchpoint_service,
+    remove_sequence_step as remove_sequence_step_service,
     reorder_sequence_steps,
     skip_touchpoint,
     update_sequence_record,
@@ -201,6 +204,16 @@ class TouchpointType:
             notes=row.notes,
         )
 
+    @strawberry.field
+    async def contact(self, info: Info) -> ContactType | None:
+        from app.db.models.contact import Contact
+
+        ctx = require_authenticated(info.context)
+        contact = await ctx.db.get(Contact, UUID(str(self.contact_id)))
+        if contact is None or contact.deleted_at is not None:
+            return None
+        return ContactType.from_model(contact)
+
 
 @strawberry.type
 class RetentionQuery:
@@ -223,6 +236,12 @@ class RetentionQuery:
     async def upcoming_touchpoints(self, info: Info) -> list[TouchpointType]:
         ctx = require_authenticated(info.context)
         rows = await get_upcoming_touchpoints(ctx.db)
+        return [TouchpointType.from_model(r) for r in rows]
+
+    @strawberry.field(description="Full touchpoint history for a company — scheduled, completed and skipped.")
+    async def company_touchpoints(self, info: Info, company_id: strawberry.ID) -> list[TouchpointType]:
+        ctx = require_authenticated(info.context)
+        rows = await get_touchpoints_for_company(ctx.db, UUID(str(company_id)))
         return [TouchpointType.from_model(r) for r in rows]
 
 
@@ -255,6 +274,36 @@ class RetentionMutation:
         try:
             row = await duplicate_sequence_record(ctx.db, actor=ctx.user, sequence_id=UUID(str(sequence_id)))
             return RetentionSequenceType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def update_retention_sequence(
+        self,
+        info: Info,
+        id: strawberry.ID,
+        name: str | None = None,
+        trigger_type: str | None = None,
+        is_active: bool | None = None,
+    ) -> RetentionSequenceType:
+        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        try:
+            row = await update_sequence_record(
+                ctx.db,
+                actor=ctx.user,
+                sequence_id=UUID(str(id)),
+                updates={"name": name, "trigger_type": trigger_type, "is_active": is_active},
+            )
+            return RetentionSequenceType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def remove_sequence_step(self, info: Info, step_id: strawberry.ID) -> bool:
+        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        try:
+            await remove_sequence_step_service(ctx.db, actor=ctx.user, step_id=UUID(str(step_id)))
+            return True
         except Exception as exc:
             _gql_error(exc)
 
@@ -341,6 +390,35 @@ class RetentionMutation:
         ctx = require_role(info.context, "admin", "account_manager", "project_manager")
         try:
             row = await skip_touchpoint(ctx.db, actor=ctx.user, touchpoint_id=UUID(str(id)), notes=notes)
+            return TouchpointType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation(description="Record a touchpoint that already happened — a call made, a meeting held.")
+    async def log_touchpoint(
+        self,
+        info: Info,
+        company_id: strawberry.ID,
+        contact_id: strawberry.ID,
+        type: str,
+        outcome: str | None = None,
+        notes: str | None = None,
+        project_id: strawberry.ID | None = None,
+        occurred_at: datetime | None = None,
+    ) -> TouchpointType:
+        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
+        try:
+            row = await log_touchpoint_service(
+                ctx.db,
+                actor=ctx.user,
+                company_id=UUID(str(company_id)),
+                contact_id=UUID(str(contact_id)),
+                type=type,
+                outcome=outcome,
+                notes=notes,
+                project_id=UUID(str(project_id)) if project_id else None,
+                occurred_at=occurred_at,
+            )
             return TouchpointType.from_model(row)
         except Exception as exc:
             _gql_error(exc)
