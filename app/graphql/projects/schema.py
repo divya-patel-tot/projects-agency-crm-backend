@@ -148,7 +148,7 @@ class ProjectMutation:
         currency: str | None = None,
         health: str | None = None,
     ) -> ProjectType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await update_project_record(
                 ctx.db,
@@ -171,7 +171,7 @@ class ProjectMutation:
 
     @strawberry.mutation
     async def delete_project(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             await delete_project_record(ctx.db, actor=ctx.user, project_id=UUID(str(id)))
             return True

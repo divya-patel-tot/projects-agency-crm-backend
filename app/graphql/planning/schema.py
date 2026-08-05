@@ -5,7 +5,7 @@ import strawberry
 from graphql import GraphQLError
 from strawberry.types import Info
 
-from app.core.deps import require_authenticated
+from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
 from app.graphql.loaders import (
     get_dependencies_by_task_loader,
@@ -254,7 +254,7 @@ class PlanningMutation:
         order_index: int,
         status: str = "not_started",
     ) -> PhaseType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await create_phase_record(
                 ctx.db,
@@ -277,7 +277,7 @@ class PlanningMutation:
         order_index: int | None = None,
         status: str | None = None,
     ) -> PhaseType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await update_phase_record(
                 ctx.db,
@@ -291,7 +291,7 @@ class PlanningMutation:
 
     @strawberry.mutation
     async def delete_phase(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             await delete_phase_record(ctx.db, actor=ctx.user, phase_id=UUID(str(id)))
             return True
@@ -300,7 +300,7 @@ class PlanningMutation:
 
     @strawberry.mutation
     async def reorder_phases(self, info: Info, project_id: strawberry.ID, ordered_phase_ids: list[strawberry.ID]) -> list[PhaseType]:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             rows = await reorder_phases(
                 ctx.db,
@@ -322,7 +322,7 @@ class PlanningMutation:
         status: str = "not_started",
         requires_client_approval: bool = False,
     ) -> MilestoneType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await create_milestone_record(
                 ctx.db,
@@ -346,7 +346,7 @@ class PlanningMutation:
         order_index: int | None = None,
         status: str | None = None,
     ) -> MilestoneType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await update_milestone_record(
                 ctx.db,
@@ -360,7 +360,7 @@ class PlanningMutation:
 
     @strawberry.mutation
     async def delete_milestone(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             await delete_milestone_record(ctx.db, actor=ctx.user, milestone_id=UUID(str(id)))
             return True
@@ -374,7 +374,7 @@ class PlanningMutation:
         phase_id: strawberry.ID,
         ordered_milestone_ids: list[strawberry.ID],
     ) -> list[MilestoneType]:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             rows = await reorder_milestones(
                 ctx.db,
@@ -400,7 +400,7 @@ class PlanningMutation:
         priority: str = "medium",
         estimated_hours: float | None = None,
     ) -> TaskType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await create_task_record(
                 ctx.db,
@@ -452,7 +452,7 @@ class PlanningMutation:
 
     @strawberry.mutation
     async def delete_task(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             await delete_task_record(ctx.db, actor=ctx.user, task_id=UUID(str(id)))
             return True
@@ -468,7 +468,7 @@ class PlanningMutation:
         depends_on_task_id: strawberry.ID,
         type: str = "finish_to_start",
     ) -> TaskDependencyType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await add_task_dependency_record(
                 ctx.db,
@@ -484,7 +484,7 @@ class PlanningMutation:
 
     @strawberry.mutation
     async def remove_task_dependency(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             await remove_task_dependency_record(ctx.db, actor=ctx.user, dependency_id=UUID(str(id)))
             return True
