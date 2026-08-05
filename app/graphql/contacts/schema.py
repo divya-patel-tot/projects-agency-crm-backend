@@ -98,7 +98,7 @@ class ContactMutation:
         linkedin_url: str | None = None,
         status: str = "active",
     ) -> ContactType:
-        ctx = require_role(info.context, "admin", "account_manager")
+        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
         try:
             row = await create_contact_record(
                 ctx.db,
@@ -141,7 +141,7 @@ class ContactMutation:
         linkedin_url: str | None = None,
         status: str | None = None,
     ) -> ContactType:
-        ctx = require_role(info.context, "admin", "account_manager")
+        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
         updates = {
             "first_name": first_name,
             "last_name": last_name,
@@ -172,7 +172,7 @@ class ContactMutation:
         id: strawberry.ID,
         password: str,
     ) -> ContactType:
-        ctx = require_role(info.context, "admin", "account_manager")
+        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
         row = await set_contact_portal_password_record(
             ctx.db,
             actor=ctx.user,
@@ -183,6 +183,6 @@ class ContactMutation:
 
     @strawberry.mutation
     async def delete_contact(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_role(info.context, "admin", "account_manager")
+        ctx = require_role(info.context, "admin", "account_manager", "project_manager")
         await delete_contact_record(ctx.db, actor=ctx.user, contact_id=UUID(str(id)))
         return True

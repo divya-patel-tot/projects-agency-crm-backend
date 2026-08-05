@@ -63,7 +63,9 @@ class InvoiceQuery:
         project_id: strawberry.ID | None = None,
         status: str | None = None,
     ) -> list[InvoiceType]:
-        ctx = require_role(info.context, "admin", "finance_admin", "account_manager", "executive_viewer")
+        ctx = require_role(
+            info.context, "admin", "finance_admin", "account_manager", "executive_viewer", "project_manager"
+        )
         rows = await get_invoices(
             ctx.db,
             company_id=UUID(str(company_id)) if company_id else None,
@@ -74,7 +76,9 @@ class InvoiceQuery:
 
     @strawberry.field
     async def invoice(self, info: Info, id: strawberry.ID) -> InvoiceType | None:
-        ctx = require_role(info.context, "admin", "finance_admin", "account_manager", "executive_viewer")
+        ctx = require_role(
+            info.context, "admin", "finance_admin", "account_manager", "executive_viewer", "project_manager"
+        )
         try:
             row = await get_invoice_by_id(ctx.db, UUID(str(id)))
             return InvoiceType.from_model(row)
@@ -97,7 +101,7 @@ class InvoiceMutation:
         issued_at: date | None = None,
         notes: str | None = None,
     ) -> InvoiceType:
-        ctx = require_role(info.context, "admin", "finance_admin")
+        ctx = require_role(info.context, "admin", "finance_admin", "project_manager")
         try:
             row = await create_invoice_record(
                 ctx.db,
@@ -128,7 +132,7 @@ class InvoiceMutation:
         paid_at: date | None = None,
         notes: str | None = None,
     ) -> InvoiceType:
-        ctx = require_role(info.context, "admin", "finance_admin")
+        ctx = require_role(info.context, "admin", "finance_admin", "project_manager")
         try:
             row = await update_invoice_record(
                 ctx.db,
@@ -148,7 +152,7 @@ class InvoiceMutation:
 
     @strawberry.mutation
     async def delete_invoice(self, info: Info, id: strawberry.ID) -> bool:
-        ctx = require_role(info.context, "admin", "finance_admin")
+        ctx = require_role(info.context, "admin", "finance_admin", "project_manager")
         try:
             return await delete_invoice_record(ctx.db, actor=ctx.user, invoice_id=UUID(str(id)))
         except Exception as exc:

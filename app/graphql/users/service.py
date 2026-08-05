@@ -44,12 +44,21 @@ async def create_user_record(
     password: str,
     role: str,
 ) -> User:
-    if actor.role != UserRole.ADMIN.value:
-        raise AuthorizationError("Only admins can invite team members")
-
     display_name = name.strip()
     normalized_email = email.lower().strip()
     role_value = _validate_role(role)
+
+    # Admins can invite any role. Project managers can only bring on team
+    # members — delivery capacity is theirs to grow, but every other role
+    # (including another PM) still needs an admin.
+    is_admin = actor.role == UserRole.ADMIN.value
+    is_pm_hiring_team_member = (
+        actor.role == UserRole.PROJECT_MANAGER.value and role_value == UserRole.TEAM_MEMBER.value
+    )
+    if not (is_admin or is_pm_hiring_team_member):
+        raise AuthorizationError(
+            "Only admins can invite team members, or project managers inviting a team member"
+        )
 
     if len(display_name) < 2:
         raise DomainError("Name must be at least 2 characters.", code="bad_user_input")
@@ -145,12 +154,22 @@ async def delete_user_record(db: AsyncSession, *, actor: User, user_id: UUID) ->
     removed with them, since nothing keeps those meaningful once the user is
     gone.
     """
-    if actor.role != UserRole.ADMIN.value:
-        raise AuthorizationError("Only admins can delete team members")
     if user_id == actor.id:
         raise DomainError("You cannot delete your own account.", code="bad_user_input")
 
     user = await _get_org_user(db, user_id, actor.org_id)
+
+    # Same split as create_user_record: admins can delete anyone, project
+    # managers can only remove a team member — not another PM, not an admin.
+    is_admin = actor.role == UserRole.ADMIN.value
+    is_pm_deleting_team_member = (
+        actor.role == UserRole.PROJECT_MANAGER.value and user.role == UserRole.TEAM_MEMBER.value
+    )
+    if not (is_admin or is_pm_deleting_team_member):
+        raise AuthorizationError(
+            "Only admins can delete team members, or project managers deleting a team member"
+        )
+
     before = {"id": str(user.id), "name": user.name, "email": user.email, "role": user.role}
     org_id = actor.org_id
 

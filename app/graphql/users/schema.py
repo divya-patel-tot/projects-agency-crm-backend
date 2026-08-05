@@ -61,7 +61,9 @@ class UserQuery:
 
 @strawberry.type
 class UserMutation:
-    @strawberry.mutation(description="Invite a team member (admin only).")
+    @strawberry.mutation(
+        description="Invite a team member. Admins can invite any role; project managers can only invite a team member."
+    )
     async def create_user(
         self,
         info: Info,
@@ -107,7 +109,10 @@ class UserMutation:
         except Exception as exc:
             _gql_error(exc)
 
-    @strawberry.mutation(description="Permanently delete a team member (admin only). Cannot be undone.")
+    @strawberry.mutation(
+        description="Permanently delete a team member. Admins can delete anyone; project managers "
+        "can only delete a team member. Cannot be undone."
+    )
     async def delete_user(self, info: Info, id: strawberry.ID) -> bool:
         ctx: GraphQLContext = require_authenticated(info.context)
         try:
