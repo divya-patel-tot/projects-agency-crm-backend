@@ -4,7 +4,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.contact import Contact
 from app.db.models.project import Project
+from app.db.models.project_contact import ProjectContact
 from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
 
@@ -73,5 +75,26 @@ async def get_members_by_project_ids(db: AsyncSession, project_ids: list[UUID]) 
         .join(User, User.id == ProjectMember.user_id)
         .where(ProjectMember.project_id.in_(project_ids), User.deleted_at.is_(None))
         .order_by(User.name)
+    )
+    return list(result.all())
+
+
+async def get_project_contact(db: AsyncSession, project_id: UUID, contact_id: UUID) -> ProjectContact | None:
+    result = await db.execute(
+        select(ProjectContact).where(
+            ProjectContact.project_id == project_id, ProjectContact.contact_id == contact_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_contacts_by_project_ids(db: AsyncSession, project_ids: list[UUID]) -> list[tuple[UUID, Contact]]:
+    if not project_ids:
+        return []
+    result = await db.execute(
+        select(ProjectContact.project_id, Contact)
+        .join(Contact, Contact.id == ProjectContact.contact_id)
+        .where(ProjectContact.project_id.in_(project_ids), Contact.deleted_at.is_(None))
+        .order_by(Contact.first_name, Contact.last_name)
     )
     return list(result.all())

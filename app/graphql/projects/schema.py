@@ -6,18 +6,22 @@ from strawberry.types import Info
 
 from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
+from app.graphql.contacts.schema import ContactType
 from app.graphql.loaders import (
+    get_contacts_by_project_loader,
     get_members_by_project_loader,
     get_phases_by_project_loader,
     get_tasks_by_project_loader,
 )
 from app.graphql.planning.schema import PhaseType, TaskType
 from app.graphql.projects.service import (
+    add_project_contact_record,
     add_project_member_record,
     create_project_record,
     delete_project_record,
     get_project_by_id,
     get_projects,
+    remove_project_contact_record,
     remove_project_member_record,
     update_project_record,
 )
@@ -90,6 +94,12 @@ class ProjectType:
         loader = get_members_by_project_loader(info.context)
         rows = await loader.load(UUID(str(self.id)))
         return [UserSummaryType.from_model(row) for row in rows]
+
+    @strawberry.field
+    async def client_contacts(self, info: Info) -> list[ContactType]:
+        loader = get_contacts_by_project_loader(info.context)
+        rows = await loader.load(UUID(str(self.id)))
+        return [ContactType.from_model(row) for row in rows]
 
 
 @strawberry.type
@@ -211,6 +221,31 @@ class ProjectMutation:
         try:
             return await remove_project_member_record(
                 ctx.db, actor=ctx.user, project_id=UUID(str(project_id)), user_id=UUID(str(user_id))
+            )
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def add_project_contact(
+        self, info: Info, project_id: strawberry.ID, contact_id: strawberry.ID
+    ) -> ContactType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            contact = await add_project_contact_record(
+                ctx.db, actor=ctx.user, project_id=UUID(str(project_id)), contact_id=UUID(str(contact_id))
+            )
+            return ContactType.from_model(contact)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def remove_project_contact(
+        self, info: Info, project_id: strawberry.ID, contact_id: strawberry.ID
+    ) -> bool:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            return await remove_project_contact_record(
+                ctx.db, actor=ctx.user, project_id=UUID(str(project_id)), contact_id=UUID(str(contact_id))
             )
         except Exception as exc:
             _gql_error(exc)

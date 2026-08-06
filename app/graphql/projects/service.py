@@ -5,12 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_activity_log
 from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.enums import ProjectStatus, UserRole
+from app.db.models.contact import Contact
 from app.db.models.project import Project
+from app.db.models.project_contact import ProjectContact
 from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
 from app.graphql.projects.repository import (
     create_project,
     get_project,
+    get_project_contact,
     get_project_member,
     list_projects,
     soft_delete_project,
@@ -214,5 +217,62 @@ async def remove_project_member_record(
         entity_type="project",
         entity_id=project.id,
         diff={"member_removed": target.name},
+    )
+    return True
+
+
+async def _get_org_contact(db: AsyncSession, contact_id: UUID, org_id: UUID) -> Contact:
+    contact = await db.get(Contact, contact_id)
+    if contact is None or contact.deleted_at is not None or contact.org_id != org_id:
+        raise NotFoundError("Contact not found")
+    return contact
+
+
+async def add_project_contact_record(
+    db: AsyncSession, *, actor: User, project_id: UUID, contact_id: UUID
+) -> Contact:
+    project = await get_project_by_id(db, project_id)
+    contact = await _get_org_contact(db, contact_id, actor.org_id)
+    if contact.company_id != project.company_id:
+        raise DomainError("This contact isn't at the project's client.", code="bad_user_input")
+
+    existing = await get_project_contact(db, project.id, contact.id)
+    if existing is not None:
+        raise DomainError("This contact is already on the project.", code="bad_user_input")
+
+    db.add(ProjectContact(org_id=actor.org_id, project_id=project.id, contact_id=contact.id))
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="update",
+        entity_type="project",
+        entity_id=project.id,
+        diff={"contact_added": f"{contact.first_name} {contact.last_name}"},
+    )
+    return contact
+
+
+async def remove_project_contact_record(
+    db: AsyncSession, *, actor: User, project_id: UUID, contact_id: UUID
+) -> bool:
+    project = await get_project_by_id(db, project_id)
+    contact = await _get_org_contact(db, contact_id, actor.org_id)
+
+    roster_entry = await get_project_contact(db, project.id, contact.id)
+    if roster_entry is None:
+        raise NotFoundError("This contact isn't on the project.")
+
+    await db.delete(roster_entry)
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="update",
+        entity_type="project",
+        entity_id=project.id,
+        diff={"contact_removed": f"{contact.first_name} {contact.last_name}"},
     )
     return True
