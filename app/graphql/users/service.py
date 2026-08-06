@@ -107,10 +107,23 @@ async def update_user_record(
     role: str | None = None,
     status: str | None = None,
 ) -> User:
-    if actor.role != UserRole.ADMIN.value:
-        raise AuthorizationError("Only admins can update team members")
-
     user = await _get_org_user(db, user_id, actor.org_id)
+
+    is_admin = actor.role == UserRole.ADMIN.value
+    # Project managers can deactivate/reactivate a team member — the same
+    # people they can already delete outright — but can't touch their name
+    # or role, and can't act on anyone above a team member.
+    is_pm_deactivating_team_member = (
+        actor.role == UserRole.PROJECT_MANAGER.value
+        and user.role == UserRole.TEAM_MEMBER.value
+        and name is None
+        and role is None
+    )
+    if not (is_admin or is_pm_deactivating_team_member):
+        raise AuthorizationError(
+            "Only admins can update team members, or project managers deactivating a team member"
+        )
+
     before = {"name": user.name, "role": user.role, "status": user.status}
 
     if name is not None:

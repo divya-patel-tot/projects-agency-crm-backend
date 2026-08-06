@@ -10,9 +10,11 @@ from app.db.models.contract import Contract
 from app.db.models.document import Document
 from app.db.models.invoice import Invoice
 from app.db.models.lookup import CompanySize, Industry
+from app.db.models.notification import Notification
 from app.db.models.organization import Organization
 from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
+from app.db.models.project_contact import ProjectContact
 from app.db.models.project_member import ProjectMember
 from app.db.models.retention import (
     EmailTemplate,
@@ -46,6 +48,7 @@ __all__ = [
     "Notification",
     "Organization",
     "Project",
+    "ProjectContact",
     "ProjectMember",
     "ProjectPhase",
     "RefreshToken",

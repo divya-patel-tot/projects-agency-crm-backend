@@ -12,6 +12,37 @@ from app.graphql.approvals.repository import (
     get_pending_client_approvals,
     reject_milestone_record,
 )
+from app.graphql.notifications.service import notify
+
+
+async def _notify_pm_of_milestone_response(db: AsyncSession, *, milestone, decision: str) -> None:
+    from app.db.models.planning import ProjectPhase
+    from app.db.models.project import Project
+    from app.db.models.user import User
+
+    phase = await db.get(ProjectPhase, milestone.phase_id)
+    if phase is None:
+        return
+    project = await db.get(Project, phase.project_id)
+    if project is None or project.project_manager_id is None:
+        return
+    pm = await db.get(User, project.project_manager_id)
+    if pm is None or pm.deleted_at is not None:
+        return
+    await notify(
+        db,
+        org_id=project.org_id,
+        recipient=pm,
+        category="milestone_approvals",
+        type_=f"milestone.{decision}",
+        title="Client responded to a milestone" if decision == "changes_requested" else "Milestone approved",
+        message=(
+            f'The client requested changes on "{milestone.title}"'
+            if decision == "changes_requested"
+            else f'The client approved "{milestone.title}"'
+        ),
+        link=f"/projects/{project.id}/milestones",
+    )
 
 
 async def mark_milestone_ready_for_review(db: AsyncSession, *, org_id: UUID, milestone_id: UUID):
@@ -38,12 +69,14 @@ async def approve_milestone(db: AsyncSession, *, approval_id: UUID, company_id: 
     if milestone is None:
         raise NotFoundError("Approval not found")
 
-    return await approve_milestone_record(
+    result = await approve_milestone_record(
         db,
         approval=approval,
         milestone=milestone,
         approver_id=contact_id,
     )
+    await _notify_pm_of_milestone_response(db, milestone=milestone, decision="approved")
+    return result
 
 
 async def request_milestone_changes(
@@ -67,10 +100,12 @@ async def request_milestone_changes(
     if milestone is None:
         raise NotFoundError("Approval not found")
 
-    return await reject_milestone_record(
+    result = await reject_milestone_record(
         db,
         approval=approval,
         milestone=milestone,
         approver_id=contact_id,
         comment=comment.strip(),
     )
+    await _notify_pm_of_milestone_response(db, milestone=milestone, decision="changes_requested")
+    return result

@@ -21,6 +21,7 @@ from app.db.models.change_request import ChangeRequest
 from app.db.models.contact import Contact
 from app.db.models.planning import Milestone, Task
 from app.db.models.user import User
+from app.graphql.notifications.service import notify
 from app.graphql.change_requests.repository import (
     create_approval_row,
     create_change_request_row,
@@ -296,6 +297,19 @@ async def create_change_request(
         entity_id=cr.id,
         diff={"after": _cr_to_dict(cr)},
     )
+    if project.project_manager_id is not None and project.project_manager_id != actor_id:
+        pm = await db.get(User, project.project_manager_id)
+        if pm is not None and pm.deleted_at is None:
+            await notify(
+                db,
+                org_id=org_id,
+                recipient=pm,
+                category="change_requests",
+                type_="change_request.created",
+                title="New change request",
+                message=f'"{cr.title}" was raised on {project.name}',
+                link=f"/projects/{project.id}/change-requests",
+            )
     return cr
 
 

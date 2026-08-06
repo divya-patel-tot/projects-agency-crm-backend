@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_activity_log
 from app.core.exceptions import DomainError, NotFoundError
 from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
+from app.db.models.project import Project
 from app.db.models.user import User
+from app.graphql.notifications.service import notify
 from app.graphql.planning.repository import (
     compute_workload,
     get_milestone,
@@ -22,6 +24,25 @@ from app.graphql.planning.repository import (
 
 def _entity_dict(entity_type: str, entity) -> dict:
     return {"id": str(entity.id), "type": entity_type}
+
+
+async def _notify_task_assignee(db: AsyncSession, *, actor: User, task: Task) -> None:
+    if task.assignee_id is None or task.assignee_id == actor.id:
+        return
+    assignee = await db.get(User, task.assignee_id)
+    if assignee is None or assignee.deleted_at is not None:
+        return
+    project = await db.get(Project, task.project_id)
+    await notify(
+        db,
+        org_id=actor.org_id,
+        recipient=assignee,
+        category="task_assignments",
+        type_="task.assigned",
+        title="You were assigned a task",
+        message=f'{actor.name} assigned you "{task.title}"' + (f" on {project.name}" if project else ""),
+        link=f"/projects/{task.project_id}/board",
+    )
 
 
 async def create_phase_record(
@@ -223,6 +244,7 @@ async def create_task_record(
         entity_id=task.id,
         diff={"after": _entity_dict("task", task)},
     )
+    await _notify_task_assignee(db, actor=actor, task=task)
     return task
 
 
@@ -231,6 +253,7 @@ async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, up
     if task is None:
         raise NotFoundError("Task not found")
     before = _entity_dict("task", task)
+    prev_assignee_id = task.assignee_id
     for key, value in updates.items():
         if value is not None and hasattr(task, key):
             setattr(task, key, value)
@@ -244,6 +267,8 @@ async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, up
         entity_id=task.id,
         diff={"before": before, "after": _entity_dict("task", task)},
     )
+    if task.assignee_id != prev_assignee_id:
+        await _notify_task_assignee(db, actor=actor, task=task)
     return task
 
 
