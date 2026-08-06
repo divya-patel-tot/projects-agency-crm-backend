@@ -22,8 +22,38 @@ from app.graphql.planning.repository import (
 )
 
 
-def _entity_dict(entity_type: str, entity) -> dict:
-    return {"id": str(entity.id), "type": entity_type}
+def _phase_dict(phase: ProjectPhase) -> dict:
+    return {
+        "id": str(phase.id),
+        "name": phase.name,
+        "status": phase.status,
+        "order_index": phase.order_index,
+        "start_date": phase.start_date.isoformat() if phase.start_date else None,
+        "due_date": phase.due_date.isoformat() if phase.due_date else None,
+    }
+
+
+def _milestone_dict(milestone: Milestone) -> dict:
+    return {
+        "id": str(milestone.id),
+        "title": milestone.title,
+        "status": milestone.status,
+        "due_date": milestone.due_date.isoformat() if milestone.due_date else None,
+        "requires_client_approval": milestone.requires_client_approval,
+    }
+
+
+def _task_dict(task: Task) -> dict:
+    return {
+        "id": str(task.id),
+        "title": task.title,
+        "status": task.status,
+        "priority": task.priority,
+        "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+        "due_date": task.due_date.isoformat() if task.due_date else None,
+        "estimated_hours": float(task.estimated_hours) if task.estimated_hours is not None else None,
+        "actual_hours": float(task.actual_hours) if task.actual_hours is not None else None,
+    }
 
 
 async def _notify_task_assignee(db: AsyncSession, *, actor: User, task: Task) -> None:
@@ -74,7 +104,7 @@ async def create_phase_record(
         action="create",
         entity_type="project_phase",
         entity_id=phase.id,
-        diff={"after": _entity_dict("project_phase", phase)},
+        diff={"after": _phase_dict(phase)},
     )
     return phase
 
@@ -83,7 +113,7 @@ async def update_phase_record(db: AsyncSession, *, actor: User, phase_id: UUID, 
     phase = await get_phase(db, phase_id)
     if phase is None:
         raise NotFoundError("Phase not found")
-    before = _entity_dict("project_phase", phase)
+    before = _phase_dict(phase)
     for key, value in updates.items():
         if value is not None and hasattr(phase, key):
             setattr(phase, key, value)
@@ -95,7 +125,7 @@ async def update_phase_record(db: AsyncSession, *, actor: User, phase_id: UUID, 
         action="update",
         entity_type="project_phase",
         entity_id=phase.id,
-        diff={"before": before, "after": _entity_dict("project_phase", phase)},
+        diff={"before": before, "after": _phase_dict(phase)},
     )
     return phase
 
@@ -104,7 +134,7 @@ async def delete_phase_record(db: AsyncSession, *, actor: User, phase_id: UUID) 
     phase = await get_phase(db, phase_id)
     if phase is None:
         raise NotFoundError("Phase not found")
-    before = _entity_dict("project_phase", phase)
+    before = _phase_dict(phase)
     await soft_delete_entity(db, phase)
     await write_activity_log(
         db,
@@ -149,7 +179,7 @@ async def create_milestone_record(
         action="create",
         entity_type="milestone",
         entity_id=milestone.id,
-        diff={"after": _entity_dict("milestone", milestone)},
+        diff={"after": _milestone_dict(milestone)},
     )
     return milestone
 
@@ -164,7 +194,7 @@ async def update_milestone_record(
     milestone = await get_milestone(db, milestone_id)
     if milestone is None:
         raise NotFoundError("Milestone not found")
-    before = _entity_dict("milestone", milestone)
+    before = _milestone_dict(milestone)
     for key, value in updates.items():
         if value is not None and hasattr(milestone, key):
             setattr(milestone, key, value)
@@ -176,7 +206,7 @@ async def update_milestone_record(
         action="update",
         entity_type="milestone",
         entity_id=milestone.id,
-        diff={"before": before, "after": _entity_dict("milestone", milestone)},
+        diff={"before": before, "after": _milestone_dict(milestone)},
     )
     return milestone
 
@@ -185,7 +215,7 @@ async def delete_milestone_record(db: AsyncSession, *, actor: User, milestone_id
     milestone = await get_milestone(db, milestone_id)
     if milestone is None:
         raise NotFoundError("Milestone not found")
-    before = _entity_dict("milestone", milestone)
+    before = _milestone_dict(milestone)
     await soft_delete_entity(db, milestone)
     await write_activity_log(
         db,
@@ -242,7 +272,7 @@ async def create_task_record(
         action="create",
         entity_type="task",
         entity_id=task.id,
-        diff={"after": _entity_dict("task", task)},
+        diff={"after": _task_dict(task)},
     )
     await _notify_task_assignee(db, actor=actor, task=task)
     return task
@@ -252,7 +282,7 @@ async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, up
     task = await get_task(db, task_id)
     if task is None:
         raise NotFoundError("Task not found")
-    before = _entity_dict("task", task)
+    before = _task_dict(task)
     prev_assignee_id = task.assignee_id
     for key, value in updates.items():
         if value is not None and hasattr(task, key):
@@ -265,7 +295,7 @@ async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, up
         action="update",
         entity_type="task",
         entity_id=task.id,
-        diff={"before": before, "after": _entity_dict("task", task)},
+        diff={"before": before, "after": _task_dict(task)},
     )
     if task.assignee_id != prev_assignee_id:
         await _notify_task_assignee(db, actor=actor, task=task)
@@ -276,7 +306,7 @@ async def delete_task_record(db: AsyncSession, *, actor: User, task_id: UUID) ->
     task = await get_task(db, task_id)
     if task is None:
         raise NotFoundError("Task not found")
-    before = _entity_dict("task", task)
+    before = _task_dict(task)
     await soft_delete_entity(db, task)
     await write_activity_log(
         db,
