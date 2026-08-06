@@ -5,8 +5,6 @@ class UserRole(StrEnum):
     ADMIN = "admin"
     PROJECT_MANAGER = "project_manager"
     TEAM_MEMBER = "team_member"
-    FINANCE_ADMIN = "finance_admin"
-    EXECUTIVE_VIEWER = "executive_viewer"
 
 
 class UserStatus(StrEnum):

@@ -6,13 +6,19 @@ from strawberry.types import Info
 
 from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
-from app.graphql.loaders import get_phases_by_project_loader, get_tasks_by_project_loader
+from app.graphql.loaders import (
+    get_members_by_project_loader,
+    get_phases_by_project_loader,
+    get_tasks_by_project_loader,
+)
 from app.graphql.planning.schema import PhaseType, TaskType
 from app.graphql.projects.service import (
+    add_project_member_record,
     create_project_record,
     delete_project_record,
     get_project_by_id,
     get_projects,
+    remove_project_member_record,
     update_project_record,
 )
 from app.graphql.users.schema import UserSummaryType
@@ -79,6 +85,12 @@ class ProjectType:
         rows = await loader.load(UUID(str(self.id)))
         return [TaskType.from_model(row) for row in rows]
 
+    @strawberry.field
+    async def members(self, info: Info) -> list[UserSummaryType]:
+        loader = get_members_by_project_loader(info.context)
+        rows = await loader.load(UUID(str(self.id)))
+        return [UserSummaryType.from_model(row) for row in rows]
+
 
 @strawberry.type
 class ProjectQuery:
@@ -86,14 +98,14 @@ class ProjectQuery:
     async def projects(self, info: Info, company_id: strawberry.ID | None = None) -> list[ProjectType]:
         ctx = require_authenticated(info.context)
         cid = UUID(str(company_id)) if company_id else None
-        rows = await get_projects(ctx.db, company_id=cid)
+        rows = await get_projects(ctx.db, company_id=cid, actor=ctx.user)
         return [ProjectType.from_model(row) for row in rows]
 
     @strawberry.field
     async def project(self, info: Info, id: strawberry.ID) -> ProjectType | None:
         ctx = require_authenticated(info.context)
         try:
-            row = await get_project_by_id(ctx.db, UUID(str(id)))
+            row = await get_project_by_id(ctx.db, UUID(str(id)), actor=ctx.user)
         except NotFoundError:
             return None
         return ProjectType.from_model(row)
@@ -175,5 +187,30 @@ class ProjectMutation:
         try:
             await delete_project_record(ctx.db, actor=ctx.user, project_id=UUID(str(id)))
             return True
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def add_project_member(
+        self, info: Info, project_id: strawberry.ID, user_id: strawberry.ID
+    ) -> UserSummaryType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            user = await add_project_member_record(
+                ctx.db, actor=ctx.user, project_id=UUID(str(project_id)), user_id=UUID(str(user_id))
+            )
+            return UserSummaryType.from_model(user)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def remove_project_member(
+        self, info: Info, project_id: strawberry.ID, user_id: strawberry.ID
+    ) -> bool:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            return await remove_project_member_record(
+                ctx.db, actor=ctx.user, project_id=UUID(str(project_id)), user_id=UUID(str(user_id))
+            )
         except Exception as exc:
             _gql_error(exc)

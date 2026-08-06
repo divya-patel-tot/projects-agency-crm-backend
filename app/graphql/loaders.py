@@ -17,6 +17,7 @@ from app.graphql.planning.repository import (
     get_tasks_by_phase_ids,
     get_tasks_by_project_ids,
 )
+from app.graphql.projects.repository import get_members_by_project_ids
 
 
 def _group_by(rows, key_fn, keys):
@@ -64,6 +65,20 @@ def get_tasks_by_project_loader(context) -> DataLoader:
         return _group_by(tasks, lambda t: t.project_id, project_ids)
 
     return _make_loader(context, "_tasks_by_project_loader", load_fn)
+
+
+def get_members_by_project_loader(context) -> DataLoader:
+    async def load_fn(project_ids: list[UUID]) -> list[list]:
+        if context.db is None:
+            return [[] for _ in project_ids]
+        rows = await get_members_by_project_ids(context.db, project_ids)
+        grouped = {pid: [] for pid in project_ids}
+        for project_id, user in rows:
+            if project_id in grouped:
+                grouped[project_id].append(user)
+        return [grouped[pid] for pid in project_ids]
+
+    return _make_loader(context, "_members_by_project_loader", load_fn)
 
 
 def get_milestones_by_phase_loader(context) -> DataLoader:

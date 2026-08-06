@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_activity_log
 from app.core.exceptions import NotFoundError
+from app.db.enums import UserRole
 from app.db.models.company import Company
 from app.db.models.user import User
 from app.graphql.companies.repository import (
@@ -26,12 +27,14 @@ def _company_to_dict(company: Company) -> dict:
     }
 
 
-async def get_companies(db: AsyncSession) -> list[Company]:
-    return await list_companies(db)
+async def get_companies(db: AsyncSession, *, actor: User | None = None) -> list[Company]:
+    member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
+    return await list_companies(db, member_user_id)
 
 
-async def get_company_by_id(db: AsyncSession, company_id: UUID) -> Company:
-    company = await get_company(db, company_id)
+async def get_company_by_id(db: AsyncSession, company_id: UUID, *, actor: User | None = None) -> Company:
+    member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
+    company = await get_company(db, company_id, member_user_id)
     if company is None:
         raise NotFoundError("Company not found")
     return company

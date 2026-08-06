@@ -13,6 +13,7 @@ from app.db.models.lookup import CompanySize, Industry
 from app.db.models.organization import Organization
 from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.retention import (
     EmailTemplate,
     JobRun,
@@ -45,6 +46,7 @@ __all__ = [
     "Notification",
     "Organization",
     "Project",
+    "ProjectMember",
     "ProjectPhase",
     "RefreshToken",
     "RetentionEnrollment",

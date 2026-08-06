@@ -101,14 +101,14 @@ class CompanyQuery:
     @strawberry.field
     async def companies(self, info: Info) -> list[CompanyType]:
         ctx = require_authenticated(info.context)
-        rows = await get_companies(ctx.db)
+        rows = await get_companies(ctx.db, actor=ctx.user)
         return [company_from_model(row) for row in rows]
 
     @strawberry.field
     async def company(self, info: Info, id: strawberry.ID) -> CompanyType | None:
         ctx = require_authenticated(info.context)
         try:
-            row = await get_company_by_id(ctx.db, UUID(str(id)))
+            row = await get_company_by_id(ctx.db, UUID(str(id)), actor=ctx.user)
         except Exception:
             return None
         return company_from_model(row)

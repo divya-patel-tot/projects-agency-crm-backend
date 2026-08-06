@@ -44,7 +44,7 @@ class AuditQuery:
         limit: int = 100,
         offset: int = 0,
     ) -> list[ActivityLogType]:
-        ctx = require_role(info.context, "admin", "executive_viewer")
+        ctx = require_role(info.context, "admin", "project_manager")
         rows = await get_audit_logs(
             ctx.db,
             entity_type=entity_type,

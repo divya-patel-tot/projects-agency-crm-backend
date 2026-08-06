@@ -5,19 +5,33 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.company import Company
+from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 
 
-async def list_companies(db: AsyncSession) -> list[Company]:
-    result = await db.execute(
-        select(Company).where(Company.deleted_at.is_(None)).order_by(Company.name)
+def _member_company_ids_subquery(member_user_id: UUID):
+    return (
+        select(Project.company_id)
+        .join(ProjectMember, ProjectMember.project_id == Project.id)
+        .where(ProjectMember.user_id == member_user_id)
     )
+
+
+async def list_companies(db: AsyncSession, member_user_id: UUID | None = None) -> list[Company]:
+    stmt = select(Company).where(Company.deleted_at.is_(None)).order_by(Company.name)
+    if member_user_id:
+        stmt = stmt.where(Company.id.in_(_member_company_ids_subquery(member_user_id)))
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
-async def get_company(db: AsyncSession, company_id: UUID) -> Company | None:
-    result = await db.execute(
-        select(Company).where(Company.id == company_id, Company.deleted_at.is_(None))
-    )
+async def get_company(
+    db: AsyncSession, company_id: UUID, member_user_id: UUID | None = None
+) -> Company | None:
+    stmt = select(Company).where(Company.id == company_id, Company.deleted_at.is_(None))
+    if member_user_id:
+        stmt = stmt.where(Company.id.in_(_member_company_ids_subquery(member_user_id)))
+    result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
 
