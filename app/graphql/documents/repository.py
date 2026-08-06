@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -78,3 +79,16 @@ async def list_documents_for_company_projects(db: AsyncSession, *, company_id: U
 async def project_belongs_to_company(db: AsyncSession, *, project_id: UUID, company_id: UUID) -> bool:
     project = await db.get(Project, project_id)
     return project is not None and project.deleted_at is None and project.company_id == company_id
+
+
+async def get_document(db: AsyncSession, document_id: UUID) -> Document | None:
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.deleted_at.is_(None))
+    )
+    return result.scalar_one_or_none()
+
+
+async def soft_delete_document(db: AsyncSession, document: Document) -> Document:
+    document.deleted_at = datetime.now(UTC)
+    await db.flush()
+    return document

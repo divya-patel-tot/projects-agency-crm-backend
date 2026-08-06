@@ -14,7 +14,8 @@ from app.graphql.loaders import (
     get_tasks_by_milestone_loader,
     get_tasks_by_phase_loader,
 )
-from app.graphql.planning.repository import list_milestones_for_phase, list_phases_for_project
+from app.graphql.planning.repository import get_phase, list_milestones_for_phase, list_phases_for_project
+from app.graphql.projects.service import actor_can_access_project
 from app.graphql.users.schema import UserSummaryType
 from app.graphql.planning.service import (
     add_task_dependency_record,
@@ -218,18 +219,25 @@ class PlanningQuery:
     @strawberry.field
     async def phases(self, info: Info, project_id: strawberry.ID) -> list[PhaseType]:
         ctx = require_authenticated(info.context)
-        rows = await list_phases_for_project(ctx.db, UUID(str(project_id)))
+        pid = UUID(str(project_id))
+        if not await actor_can_access_project(ctx.db, ctx.user, pid):
+            return []
+        rows = await list_phases_for_project(ctx.db, pid)
         return [PhaseType.from_model(row) for row in rows]
 
     @strawberry.field
     async def milestones(self, info: Info, phase_id: strawberry.ID) -> list[MilestoneType]:
         ctx = require_authenticated(info.context)
-        rows = await list_milestones_for_phase(ctx.db, UUID(str(phase_id)))
+        phase_uuid = UUID(str(phase_id))
+        phase = await get_phase(ctx.db, phase_uuid)
+        if phase is not None and not await actor_can_access_project(ctx.db, ctx.user, phase.project_id):
+            return []
+        rows = await list_milestones_for_phase(ctx.db, phase_uuid)
         return [MilestoneType.from_model(row) for row in rows]
 
     @strawberry.field
     async def workload(self, info: Info, project_id: strawberry.ID | None = None) -> list[WorkloadType]:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         pid = UUID(str(project_id)) if project_id else None
         rows = await get_workload_rows(ctx.db, project_id=pid)
         return [

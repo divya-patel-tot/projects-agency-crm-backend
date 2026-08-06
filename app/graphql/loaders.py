@@ -164,6 +164,62 @@ async def list_tags(db: AsyncSession) -> list[Tag]:
     return list(result.scalars().all())
 
 
+async def get_tags_by_entity_ids(
+    db: AsyncSession, *, entity_type: str, entity_ids: list[UUID]
+) -> list[tuple[UUID, Tag]]:
+    if not entity_ids:
+        return []
+    result = await db.execute(
+        select(EntityTag.entity_id, Tag)
+        .join(Tag, Tag.id == EntityTag.tag_id)
+        .where(EntityTag.entity_type == entity_type, EntityTag.entity_id.in_(entity_ids))
+        .order_by(Tag.name)
+    )
+    return list(result.all())
+
+
+def get_tags_by_company_loader(context) -> DataLoader:
+    async def load_fn(company_ids: list[UUID]) -> list[list]:
+        if context.db is None:
+            return [[] for _ in company_ids]
+        rows = await get_tags_by_entity_ids(context.db, entity_type="company", entity_ids=company_ids)
+        grouped = {cid: [] for cid in company_ids}
+        for entity_id, tag in rows:
+            if entity_id in grouped:
+                grouped[entity_id].append(tag)
+        return [grouped[cid] for cid in company_ids]
+
+    return _make_loader(context, "_tags_by_company_loader", load_fn)
+
+
+def get_tags_by_project_loader(context) -> DataLoader:
+    async def load_fn(project_ids: list[UUID]) -> list[list]:
+        if context.db is None:
+            return [[] for _ in project_ids]
+        rows = await get_tags_by_entity_ids(context.db, entity_type="project", entity_ids=project_ids)
+        grouped = {pid: [] for pid in project_ids}
+        for entity_id, tag in rows:
+            if entity_id in grouped:
+                grouped[entity_id].append(tag)
+        return [grouped[pid] for pid in project_ids]
+
+    return _make_loader(context, "_tags_by_project_loader", load_fn)
+
+
+def get_tags_by_contact_loader(context) -> DataLoader:
+    async def load_fn(contact_ids: list[UUID]) -> list[list]:
+        if context.db is None:
+            return [[] for _ in contact_ids]
+        rows = await get_tags_by_entity_ids(context.db, entity_type="contact", entity_ids=contact_ids)
+        grouped = {cid: [] for cid in contact_ids}
+        for entity_id, tag in rows:
+            if entity_id in grouped:
+                grouped[entity_id].append(tag)
+        return [grouped[cid] for cid in contact_ids]
+
+    return _make_loader(context, "_tags_by_contact_loader", load_fn)
+
+
 async def list_company_sizes(db: AsyncSession) -> list[CompanySize]:
     result = await db.execute(select(CompanySize).order_by(CompanySize.sort_order))
     return list(result.scalars().all())

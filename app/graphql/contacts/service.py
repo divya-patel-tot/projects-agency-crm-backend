@@ -74,6 +74,7 @@ async def create_contact_record(
     preferred_channel: str | None = None,
     timezone: str | None = None,
     portal_access_enabled: bool = False,
+    portal_can_raise_requests: bool = False,
     portal_password: str | None = None,
     linkedin_url: str | None = None,
     status: str = "active",
@@ -93,6 +94,7 @@ async def create_contact_record(
         preferred_channel=preferred_channel,
         timezone=timezone,
         portal_access_enabled=portal_access_enabled,
+        portal_can_raise_requests=portal_can_raise_requests,
         linkedin_url=linkedin_url,
         status=status,
     )

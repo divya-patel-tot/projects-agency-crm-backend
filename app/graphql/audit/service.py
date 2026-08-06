@@ -13,6 +13,7 @@ async def get_audit_logs(
     db: AsyncSession,
     *,
     entity_type: str | None = None,
+    entity_id: UUID | None = None,
     actor_id: UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
@@ -22,6 +23,7 @@ async def get_audit_logs(
     return await list_activity_logs(
         db,
         entity_type=entity_type,
+        entity_id=entity_id,
         actor_id=actor_id,
         start_at=start_at,
         end_at=end_at,

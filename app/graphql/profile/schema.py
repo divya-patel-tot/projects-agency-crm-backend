@@ -122,6 +122,7 @@ class ProfileMutation:
                     status=ctx.user.status,
                     avatar_url=ctx.user.avatar_url,
                     scope="INTERNAL",
+                    totp_enabled=ctx.user.totp_enabled,
                     organization=_organization_viewer(ctx.org),
                 )
 

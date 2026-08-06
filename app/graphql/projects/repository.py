@@ -46,6 +46,18 @@ async def get_project_member(db: AsyncSession, project_id: UUID, user_id: UUID) 
     return result.scalar_one_or_none()
 
 
+async def ensure_project_member(db: AsyncSession, *, org_id: UUID, project_id: UUID, user_id: UUID) -> None:
+    """Add someone to a project's roster if they aren't on it already — the
+    quiet side effect of being assigned a task or set as project manager, not
+    a user-initiated action, so it skips the Team-tab permission checks.
+    """
+    existing = await get_project_member(db, project_id, user_id)
+    if existing is not None:
+        return
+    db.add(ProjectMember(org_id=org_id, project_id=project_id, user_id=user_id))
+    await db.flush()
+
+
 async def create_project(db: AsyncSession, project: Project) -> Project:
     db.add(project)
     await db.flush()

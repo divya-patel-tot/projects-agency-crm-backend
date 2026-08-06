@@ -24,6 +24,7 @@ from app.graphql.change_requests.service import (
 from app.graphql.change_requests.ai_assist import draft_impact_assessment as draft_impact_assessment_ai
 from app.graphql.change_requests.repository import list_approvals_for_cr
 from app.graphql.portal.repository import get_project_for_company
+from app.graphql.projects.service import actor_can_access_project
 
 
 def _gql_error(exc: Exception) -> None:
@@ -159,10 +160,13 @@ class ChangeRequestQuery:
         status: str | None = None,
     ) -> list[ChangeRequestType]:
         ctx = require_authenticated(info.context)
+        pid = UUID(str(project_id))
+        if not await actor_can_access_project(ctx.db, ctx.user, pid):
+            return []
         try:
             rows = await get_change_requests(
                 ctx.db,
-                project_id=UUID(str(project_id)),
+                project_id=pid,
                 status=status,
             )
             return [ChangeRequestType.from_model(row) for row in rows]
@@ -173,7 +177,11 @@ class ChangeRequestQuery:
     async def change_request(self, info: Info, id: strawberry.ID) -> ChangeRequestType | None:
         ctx = require_authenticated(info.context)
         row = await get_change_request(ctx.db, UUID(str(id)))
-        return ChangeRequestType.from_model(row) if row else None
+        if row is None:
+            return None
+        if not await actor_can_access_project(ctx.db, ctx.user, row.project_id):
+            return None
+        return ChangeRequestType.from_model(row)
 
     @strawberry.field
     async def change_request_dashboard(self, info: Info) -> ChangeRequestDashboardType:
@@ -309,6 +317,11 @@ class ChangeRequestMutation:
     ) -> ChangeRequestType:
         if info.context.actor_type == ActorType.PORTAL:
             ctx = require_portal(info.context)
+            if not ctx.contact.portal_can_raise_requests:
+                raise GraphQLError(
+                    "You don't have permission to raise change requests. Ask your project contact to submit this for you.",
+                    extensions={"code": "authorization_error"},
+                )
             project = await get_project_for_company(
                 ctx.db,
                 project_id=UUID(str(project_id)),
@@ -381,6 +394,11 @@ class ChangeRequestMutation:
     @strawberry.mutation
     async def resubmit_change_request(self, info: Info, id: strawberry.ID) -> ChangeRequestType:
         ctx = require_portal(info.context)
+        if not ctx.contact.portal_can_raise_requests:
+            raise GraphQLError(
+                "You don't have permission to raise change requests. Ask your project contact to submit this for you.",
+                extensions={"code": "authorization_error"},
+            )
         try:
             row = await portal_resubmit_change_request(ctx.db, contact=ctx.contact, cr_id=UUID(str(id)))
             return ChangeRequestType.from_model(row)

@@ -20,6 +20,7 @@ from app.graphql.planning.repository import (
     soft_delete_entity,
     validate_dependency_insert,
 )
+from app.graphql.projects.repository import ensure_project_member
 
 
 def _phase_dict(phase: ProjectPhase) -> dict:
@@ -57,7 +58,14 @@ def _task_dict(task: Task) -> dict:
 
 
 async def _notify_task_assignee(db: AsyncSession, *, actor: User, task: Task) -> None:
-    if task.assignee_id is None or task.assignee_id == actor.id:
+    if task.assignee_id is None:
+        return
+
+    # Being assigned a task puts you on the project, whether or not you get
+    # notified about it — that's a preference, this is just accurate roster.
+    await ensure_project_member(db, org_id=actor.org_id, project_id=task.project_id, user_id=task.assignee_id)
+
+    if task.assignee_id == actor.id:
         return
     assignee = await db.get(User, task.assignee_id)
     if assignee is None or assignee.deleted_at is not None:

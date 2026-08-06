@@ -11,6 +11,7 @@ from app.graphql.loaders import (
     get_contacts_by_project_loader,
     get_members_by_project_loader,
     get_phases_by_project_loader,
+    get_tags_by_project_loader,
     get_tasks_by_project_loader,
 )
 from app.graphql.planning.schema import PhaseType, TaskType
@@ -25,6 +26,7 @@ from app.graphql.projects.service import (
     remove_project_member_record,
     update_project_record,
 )
+from app.graphql.tags.schema import TagType
 from app.graphql.users.schema import UserSummaryType
 
 
@@ -100,6 +102,12 @@ class ProjectType:
         loader = get_contacts_by_project_loader(info.context)
         rows = await loader.load(UUID(str(self.id)))
         return [ContactType.from_model(row) for row in rows]
+
+    @strawberry.field
+    async def tags(self, info: Info) -> list[TagType]:
+        loader = get_tags_by_project_loader(info.context)
+        rows = await loader.load(UUID(str(self.id)))
+        return [TagType(id=strawberry.ID(str(row.id)), name=row.name) for row in rows]
 
 
 @strawberry.type

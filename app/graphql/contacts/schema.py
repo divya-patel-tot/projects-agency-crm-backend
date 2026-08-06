@@ -14,6 +14,8 @@ from app.graphql.contacts.service import (
     set_contact_portal_password_record,
     update_contact_record,
 )
+from app.graphql.loaders import get_tags_by_contact_loader
+from app.graphql.tags.schema import TagType
 
 
 @strawberry.type
@@ -30,6 +32,7 @@ class ContactType:
     preferred_channel: str | None = None
     timezone: str | None = None
     portal_access_enabled: bool
+    portal_can_raise_requests: bool
     linkedin_url: str | None = None
     status: str
 
@@ -48,9 +51,16 @@ class ContactType:
             preferred_channel=contact.preferred_channel,
             timezone=contact.timezone,
             portal_access_enabled=contact.portal_access_enabled,
+            portal_can_raise_requests=contact.portal_can_raise_requests,
             linkedin_url=contact.linkedin_url,
             status=contact.status,
         )
+
+    @strawberry.field
+    async def tags(self, info: Info) -> list[TagType]:
+        loader = get_tags_by_contact_loader(info.context)
+        rows = await loader.load(UUID(str(self.id)))
+        return [TagType(id=strawberry.ID(str(row.id)), name=row.name) for row in rows]
 
 
 @strawberry.type
@@ -94,6 +104,7 @@ class ContactMutation:
         preferred_channel: str | None = None,
         timezone: str | None = None,
         portal_access_enabled: bool = False,
+        portal_can_raise_requests: bool = False,
         portal_password: str | None = None,
         linkedin_url: str | None = None,
         status: str = "active",
@@ -114,6 +125,7 @@ class ContactMutation:
                 preferred_channel=preferred_channel,
                 timezone=timezone,
                 portal_access_enabled=portal_access_enabled,
+                portal_can_raise_requests=portal_can_raise_requests,
                 portal_password=portal_password,
                 linkedin_url=linkedin_url,
                 status=status,
@@ -137,6 +149,7 @@ class ContactMutation:
         preferred_channel: str | None = None,
         timezone: str | None = None,
         portal_access_enabled: bool | None = None,
+        portal_can_raise_requests: bool | None = None,
         portal_password: str | None = None,
         linkedin_url: str | None = None,
         status: str | None = None,
@@ -153,6 +166,7 @@ class ContactMutation:
             "preferred_channel": preferred_channel,
             "timezone": timezone,
             "portal_access_enabled": portal_access_enabled,
+            "portal_can_raise_requests": portal_can_raise_requests,
             "portal_password": portal_password,
             "linkedin_url": linkedin_url,
             "status": status,

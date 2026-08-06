@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.enums import ApprovalStatus, ApproverType, ChangeRequestStatus, EntityType
 from app.db.models.approval import Approval
 from app.db.models.change_request import ChangeRequest, ChangeRequestAttachment
-from app.db.models.notification import Notification
 from app.db.models.organization import Organization
 from app.db.models.planning import Milestone, ProjectPhase, Task
 from app.db.models.project import Project
@@ -186,29 +185,6 @@ async def create_task_row(db: AsyncSession, task: Task) -> Task:
     db.add(task)
     await db.flush()
     return task
-
-
-async def create_notification_row(
-    db: AsyncSession,
-    *,
-    org_id: UUID,
-    user_id: UUID,
-    type: str,
-    title: str,
-    message: str,
-    link: str | None = None,
-) -> Notification:
-    row = Notification(
-        org_id=org_id,
-        user_id=user_id,
-        type=type,
-        title=title,
-        message=message,
-        link=link,
-    )
-    db.add(row)
-    await db.flush()
-    return row
 
 
 async def dashboard_aggregates(

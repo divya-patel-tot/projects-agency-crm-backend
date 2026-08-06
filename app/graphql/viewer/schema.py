@@ -39,6 +39,7 @@ class ViewerType:
     status: str
     avatar_url: str | None = None
     scope: str
+    totp_enabled: bool = False
     organization: OrganizationViewerType | None = None
     company: CompanyViewerType | None = None
     contact: ContactViewerType | None = None
@@ -67,6 +68,7 @@ class ViewerQuery:
                 status=ctx.user.status,
                 avatar_url=ctx.user.avatar_url,
                 scope="INTERNAL",
+                totp_enabled=ctx.user.totp_enabled,
                 organization=_organization_viewer(ctx.org),
             )
 

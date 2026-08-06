@@ -13,6 +13,7 @@ from app.db.models.user import User
 from app.graphql.notifications.service import notify
 from app.graphql.projects.repository import (
     create_project,
+    ensure_project_member,
     get_project,
     get_project_contact,
     get_project_member,
@@ -38,6 +39,19 @@ async def get_projects(
 ) -> list[Project]:
     member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
     return await list_projects(db, company_id, member_user_id)
+
+
+async def actor_can_access_project(db: AsyncSession, actor: User, project_id: UUID) -> bool:
+    """Whether `actor` can see data scoped to `project_id` — everyone but a
+    team member can see everything; a team member only what they're on.
+    Mirrors the scoping in `get_projects`/`get_project_by_id`, for the
+    project-scoped endpoints (change requests, phases, workload) that don't
+    go through those two directly.
+    """
+    if actor.role != UserRole.TEAM_MEMBER.value:
+        return True
+    member = await get_project_member(db, project_id, actor.id)
+    return member is not None
 
 
 async def get_project_by_id(db: AsyncSession, project_id: UUID, *, actor: User | None = None) -> Project:
@@ -90,6 +104,8 @@ async def create_project_record(
         entity_id=project.id,
         diff={"after": _project_to_dict(project)},
     )
+    if project_manager_id is not None:
+        await ensure_project_member(db, org_id=actor.org_id, project_id=project.id, user_id=project_manager_id)
     return project
 
 
@@ -103,6 +119,7 @@ async def update_project_record(
     project = await get_project_by_id(db, project_id)
     before = _project_to_dict(project)
     prev_status = project.status
+    prev_pm_id = project.project_manager_id
     for key, value in updates.items():
         if value is not None and hasattr(project, key):
             setattr(project, key, value)
@@ -116,6 +133,8 @@ async def update_project_record(
         entity_id=project.id,
         diff={"before": before, "after": _project_to_dict(project)},
     )
+    if project.project_manager_id is not None and project.project_manager_id != prev_pm_id:
+        await ensure_project_member(db, org_id=actor.org_id, project_id=project.id, user_id=project.project_manager_id)
     if prev_status != ProjectStatus.COMPLETED.value and project.status == ProjectStatus.COMPLETED.value:
         from app.db.enums import SequenceTriggerType
         from app.graphql.contacts.repository import get_contacts_by_company_ids

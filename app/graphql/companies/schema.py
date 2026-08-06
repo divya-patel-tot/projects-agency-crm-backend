@@ -8,6 +8,8 @@ from app.core.deps import GraphQLContext, require_authenticated, require_role
 from app.db.models.contact import Contact
 from app.db.models.project import Project
 from app.db.models.user import User
+from app.graphql.audit.schema import ActivityLogType
+from app.graphql.audit.service import get_audit_logs
 from app.graphql.companies.service import (
     create_company_record,
     delete_company_record,
@@ -16,7 +18,8 @@ from app.graphql.companies.service import (
     update_company_record,
 )
 from app.graphql.contacts.schema import ContactType
-from app.graphql.loaders import get_contacts_by_company_loader
+from app.graphql.loaders import get_contacts_by_company_loader, get_tags_by_company_loader
+from app.graphql.tags.schema import TagType
 from app.graphql.users.schema import UserSummaryType
 
 
@@ -78,6 +81,19 @@ class CompanyType:
             .where(Project.company_id == UUID(str(self.id)), Project.deleted_at.is_(None))
         )
         return int(result.scalar_one())
+
+    @strawberry.field
+    async def tags(self, info: Info) -> list[TagType]:
+        loader = get_tags_by_company_loader(info.context)
+        rows = await loader.load(UUID(str(self.id)))
+        return [TagType(id=strawberry.ID(str(row.id)), name=row.name) for row in rows]
+
+    @strawberry.field
+    async def activity(self, info: Info, limit: int = 20) -> list[ActivityLogType]:
+        if info.context.db is None:
+            return []
+        rows = await get_audit_logs(info.context.db, entity_type="company", entity_id=UUID(str(self.id)), limit=limit)
+        return [ActivityLogType.from_model(row) for row in rows]
 
 
 def company_from_model(company) -> CompanyType:

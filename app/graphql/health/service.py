@@ -16,7 +16,9 @@ from app.db.models.company import Company
 from app.db.models.contact import Contact
 from app.db.models.project import Project
 from app.db.models.retention import Touchpoint
+from app.db.models.user import User
 from app.graphql.contracts.repository import list_contracts
+from app.graphql.notifications.service import notify
 from app.graphql.health.repository import (
     insert_health_score,
     list_at_risk_companies,
@@ -197,6 +199,7 @@ async def record_company_health_score(
     today: date | None = None,
     include_ai: bool = True,
 ) -> ClientHealthScore:
+    previous_score = company.health_score
     score, factors = await compute_company_health_factors(db, company=company, settings=settings, today=today)
     ai_summary = None
     if include_ai:
@@ -214,6 +217,27 @@ async def record_company_health_score(
     await insert_health_score(db, row)
     company.health_score = score
     await db.flush()
+
+    just_became_at_risk = score < settings.at_risk_threshold and (
+        previous_score is None or previous_score >= settings.at_risk_threshold
+    )
+    if just_became_at_risk and company.account_owner_id:
+        owner = await db.get(User, company.account_owner_id)
+        if owner is not None and owner.deleted_at is None:
+            await notify(
+                db,
+                org_id=company.org_id,
+                recipient=owner,
+                category="project_updates",
+                type_="company_at_risk",
+                title=f"{company.name} is now at risk",
+                message=(
+                    f"{company.name}'s health score dropped to {score:.0f}, "
+                    f"below the at-risk threshold of {settings.at_risk_threshold:.0f}."
+                ),
+                link=f"/companies/{company.id}",
+            )
+
     return row
 
 

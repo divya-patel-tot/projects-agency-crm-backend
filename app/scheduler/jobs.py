@@ -21,6 +21,7 @@ from app.db.models.user import User
 from app.graphql.change_requests.state_machine import org_settings_from_dict
 from app.graphql.contracts.repository import list_active_contracts_in_renewal_window
 from app.graphql.health.service import get_at_risk_companies, get_primary_contact, recalculate_org_health_scores
+from app.graphql.notifications.service import notify
 from app.graphql.org_settings import health_settings_from_dict
 from app.graphql.retention.repository import (
     job_run_exists,
@@ -124,6 +125,20 @@ async def flag_overdue_touchpoints(run_date: date | None = None) -> dict:
             for tp in await list_scheduled_touchpoints_past_due(db, now=now):
                 tp.status = TouchpointStatus.OVERDUE.value
                 flagged += 1
+
+                company = await db.get(Company, tp.company_id)
+                owner = await db.get(User, company.account_owner_id) if company and company.account_owner_id else None
+                if owner is not None and owner.deleted_at is None:
+                    await notify(
+                        db,
+                        org_id=org_id,
+                        recipient=owner,
+                        category="retention_touchpoints",
+                        type_="touchpoint_overdue",
+                        title=f"Overdue touchpoint: {company.name if company else 'a client'}",
+                        message=f"A scheduled {tp.type.replace('_', ' ')} touchpoint is now overdue.",
+                        link=f"/companies/{tp.company_id}/touchpoints",
+                    )
         await _record_job_run(org_id, JOB_FLAG_OVERDUE, today, detail=f"flagged={flagged}")
 
     return {"flagged": flagged}
@@ -146,7 +161,6 @@ async def escalate_pending_change_requests(run_date: date | None = None) -> dict
             continue
         async with get_tenant_db(org_id) as db:
             from app.db.models.organization import Organization
-            from app.graphql.change_requests.repository import create_notification_row
 
             org = await db.get(Organization, org_id)
             org_settings = org_settings_from_dict(org.settings if org else {})
@@ -166,12 +180,14 @@ async def escalate_pending_change_requests(run_date: date | None = None) -> dict
                 cr.manager_escalation_flagged = True
                 project = await db.get(Project, cr.project_id)
                 notify_user_id = cr.assigned_pm_id or (project.project_manager_id if project else None)
-                if notify_user_id:
-                    await create_notification_row(
+                recipient = await db.get(User, notify_user_id) if notify_user_id else None
+                if recipient is not None and recipient.deleted_at is None:
+                    await notify(
                         db,
                         org_id=org_id,
-                        user_id=notify_user_id,
-                        type="cr_sla_escalation",
+                        recipient=recipient,
+                        category="change_requests",
+                        type_="cr_sla_escalation",
                         title=f"CR overdue for response: {cr.title}",
                         message=f"Change request '{cr.title}' exceeded SLA ({org_settings.response_sla_days} days).",
                         link=f"/change-requests/{cr.id}",
@@ -191,8 +207,6 @@ async def project_deadline_reminders(run_date: date | None = None) -> dict:
         if not await _should_run_job(org_id, JOB_DEADLINE_REMINDERS, today):
             continue
         async with get_tenant_db(org_id) as db:
-            from app.graphql.change_requests.repository import create_notification_row
-
             task_rows = await db.execute(
                 select(Task).where(
                     Task.deleted_at.is_(None),
@@ -202,15 +216,17 @@ async def project_deadline_reminders(run_date: date | None = None) -> dict:
                 )
             )
             for task in task_rows.scalars().all():
-                if task.assignee_id:
-                    await create_notification_row(
+                assignee = await db.get(User, task.assignee_id) if task.assignee_id else None
+                if assignee is not None and assignee.deleted_at is None:
+                    await notify(
                         db,
                         org_id=org_id,
-                        user_id=task.assignee_id,
-                        type="task_deadline_reminder",
+                        recipient=assignee,
+                        category="task_assignments",
+                        type_="task_deadline_reminder",
                         title=f"Task due soon: {task.title}",
                         message=f"Task '{task.title}' is due on {task.due_date}.",
-                        link=f"/projects/{task.project_id}/tasks/{task.id}",
+                        link=f"/projects/{task.project_id}/board",
                     )
                     notified += 1
 
@@ -228,12 +244,14 @@ async def project_deadline_reminders(run_date: date | None = None) -> dict:
             for ms in ms_rows.scalars().all():
                 phase = await db.get(ProjectPhase, ms.phase_id)
                 project = await db.get(Project, phase.project_id) if phase else None
-                if project and project.project_manager_id:
-                    await create_notification_row(
+                pm = await db.get(User, project.project_manager_id) if project and project.project_manager_id else None
+                if pm is not None and pm.deleted_at is None:
+                    await notify(
                         db,
                         org_id=org_id,
-                        user_id=project.project_manager_id,
-                        type="milestone_deadline_reminder",
+                        recipient=pm,
+                        category="project_updates",
+                        type_="milestone_deadline_reminder",
                         title=f"Milestone due soon: {ms.title}",
                         message=f"Milestone '{ms.title}' is due on {ms.due_date}.",
                         link=f"/projects/{project.id}",
@@ -277,8 +295,6 @@ async def contract_renewal_check(run_date: date | None = None) -> dict:
         if not await _should_run_job(org_id, JOB_CONTRACT_RENEWAL, today):
             continue
         async with get_tenant_db(org_id) as db:
-            from app.graphql.change_requests.repository import create_notification_row
-
             org = await db.get(Organization, org_id)
             settings = health_settings_from_dict(org.settings if org else {})
             window_end = today + timedelta(days=settings.contract_renewal_window_days)
@@ -301,13 +317,15 @@ async def contract_renewal_check(run_date: date | None = None) -> dict:
                 enrolled += len(new_enrollments)
 
                 company = await db.get(Company, contract.company_id)
-                if company and company.account_owner_id:
+                owner = await db.get(User, company.account_owner_id) if company and company.account_owner_id else None
+                if owner is not None and owner.deleted_at is None:
                     days_left = (contract.end_date - today).days
-                    await create_notification_row(
+                    await notify(
                         db,
                         org_id=org_id,
-                        user_id=company.account_owner_id,
-                        type="contract_renewal_approaching",
+                        recipient=owner,
+                        category="project_updates",
+                        type_="contract_renewal_approaching",
                         title=f"Contract renewal approaching: {company.name}",
                         message=(
                             f"Contract '{contract.name}' for {company.name} ends in {days_left} days "
@@ -407,6 +425,27 @@ async def flag_overdue_invoices(run_date: date | None = None) -> dict:
                 if invoice.status != InvoiceStatus.OVERDUE.value:
                     invoice.status = InvoiceStatus.OVERDUE.value
                     flagged += 1
+
+                    company = await db.get(Company, invoice.company_id)
+                    owner = (
+                        await db.get(User, company.account_owner_id)
+                        if company and company.account_owner_id
+                        else None
+                    )
+                    if owner is not None and owner.deleted_at is None:
+                        await notify(
+                            db,
+                            org_id=org_id,
+                            recipient=owner,
+                            category="project_updates",
+                            type_="invoice_overdue",
+                            title=f"Invoice overdue: {company.name if company else 'a client'}",
+                            message=(
+                                f"Invoice {invoice.invoice_number or invoice.id} "
+                                f"for {company.name if company else 'this client'} is now overdue."
+                            ),
+                            link=f"/companies/{invoice.company_id}/invoices",
+                        )
         await _record_job_run(org_id, JOB_FLAG_OVERDUE_INVOICES, today, detail=f"flagged={flagged}")
 
     return {"flagged": flagged}

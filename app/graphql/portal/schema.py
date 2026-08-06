@@ -15,7 +15,13 @@ from app.graphql.approvals.service import (
     mark_milestone_ready_for_review,
     request_milestone_changes,
 )
-from app.graphql.documents.service import confirm_upload, get_entity_documents, get_portal_documents, request_upload_url
+from app.graphql.documents.service import (
+    confirm_upload,
+    delete_document_record,
+    get_entity_documents,
+    get_portal_documents,
+    request_upload_url,
+)
 from app.graphql.loaders import get_phases_by_project_loader, get_tasks_by_project_loader
 from app.graphql.planning.repository import list_milestones_for_phase, list_phases_for_project
 from app.graphql.planning.schema import MilestoneType, PhaseType, TaskType
@@ -377,6 +383,28 @@ class DocumentMutation:
                 file_url=file_url,
             )
             return DocumentType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def delete_document(self, info: Info, id: strawberry.ID) -> bool:
+        if info.context.actor_type == ActorType.PORTAL:
+            ctx = require_portal(info.context)
+            actor_id = ctx.contact.id
+            actor_role = None
+        else:
+            ctx = require_authenticated(info.context)
+            actor_id = ctx.user.id
+            actor_role = ctx.user.role
+        try:
+            await delete_document_record(
+                ctx.db,
+                document_id=UUID(str(id)),
+                actor_type=ctx.actor_type,
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+            return True
         except Exception as exc:
             _gql_error(exc)
 

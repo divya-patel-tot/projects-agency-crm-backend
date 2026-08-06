@@ -12,6 +12,7 @@ from app.graphql.health.schema import HealthQuery
 from app.graphql.invoices.schema import InvoiceMutation, InvoiceQuery
 from app.graphql.lookups.schema import LookupQuery
 from app.graphql.notifications.schema import NotificationMutation, NotificationQuery
+from app.graphql.organization.schema import OrganizationMutation, OrganizationQuery
 from app.graphql.planning.schema import PlanningMutation, PlanningQuery
 from app.graphql.portal.auth.schema import PortalAuthMutation
 from app.graphql.portal.schema import ApprovalMutation, DocumentMutation, DocumentQuery, PortalQuery
@@ -55,6 +56,7 @@ Query = merge_types(
         ViewerQuery,
         ProfileQuery,
         NotificationQuery,
+        OrganizationQuery,
     ),
 )
 
@@ -77,6 +79,7 @@ Mutation = merge_types(
         UserMutation,
         ProfileMutation,
         NotificationMutation,
+        OrganizationMutation,
     ),
 )
 

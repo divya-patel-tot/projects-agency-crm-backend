@@ -25,7 +25,6 @@ from app.graphql.notifications.service import notify
 from app.graphql.change_requests.repository import (
     create_approval_row,
     create_change_request_row,
-    create_notification_row,
     create_task_row,
     dashboard_aggregates,
     get_approval_by_id,
@@ -153,11 +152,15 @@ async def _notify_manager_escalation(db: AsyncSession, *, cr: ChangeRequest, org
     notify_user_id = cr.assigned_pm_id or (project.project_manager_id if project else None)
     if notify_user_id is None:
         return
-    await create_notification_row(
+    recipient = await db.get(User, notify_user_id)
+    if recipient is None or recipient.deleted_at is not None:
+        return
+    await notify(
         db,
         org_id=org_id,
-        user_id=notify_user_id,
-        type="cr_revision_escalation",
+        recipient=recipient,
+        category="change_requests",
+        type_="cr_revision_escalation",
         title=f"Change request revision cap exceeded: {cr.title}",
         message=(
             f"Change request '{cr.title}' has exceeded the revision cap "

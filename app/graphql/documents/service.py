@@ -3,14 +3,16 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import DomainError, NotFoundError
+from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.core.security import ActorType, create_upload_token
 from app.db.enums import EntityType
 from app.graphql.documents.repository import (
     create_document,
+    get_document,
     list_documents_for_company_projects,
     list_documents_for_entity,
     project_belongs_to_company,
+    soft_delete_document,
 )
 from app.integrations import asset_storage
 
@@ -103,3 +105,23 @@ async def get_portal_documents(db: AsyncSession, *, company_id: UUID):
 async def get_entity_documents(db: AsyncSession, *, entity_type: str, entity_id: UUID):
     entity_type = _validate_document_entity_type(entity_type)
     return await list_documents_for_entity(db, entity_type=entity_type, entity_id=entity_id)
+
+
+async def delete_document_record(
+    db: AsyncSession,
+    *,
+    document_id: UUID,
+    actor_type: ActorType,
+    actor_id: UUID,
+    actor_role: str | None,
+):
+    document = await get_document(db, document_id)
+    if document is None:
+        raise NotFoundError("Document not found")
+
+    is_own_upload = document.uploaded_by == actor_id
+    is_internal_manager = actor_type == ActorType.INTERNAL and actor_role in ("admin", "project_manager")
+    if not (is_own_upload or is_internal_manager):
+        raise AuthorizationError("You can only delete documents you uploaded, unless you're an admin or PM")
+
+    return await soft_delete_document(db, document)
