@@ -7,6 +7,7 @@ from strawberry.types import Info
 
 from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
+from app.db.enums import Currency
 from app.graphql.contracts.service import (
     create_contract_record,
     delete_contract_record,
@@ -14,6 +15,7 @@ from app.graphql.contracts.service import (
     get_contracts,
     update_contract_record,
 )
+from app.graphql.loaders import get_projects_by_company_loader
 
 
 def _gql_error(exc: Exception) -> None:
@@ -45,6 +47,15 @@ class ContractType:
             auto_renew=row.auto_renew,
             status=row.status,
         )
+
+    @strawberry.field
+    async def currency(self, info: Info) -> str:
+        # Contracts don't carry their own currency — they inherit whatever
+        # the client's projects are billed in, defaulting to GBP if the
+        # client has no projects yet.
+        loader = get_projects_by_company_loader(info.context)
+        projects = await loader.load(UUID(str(self.company_id)))
+        return projects[0].currency if projects else Currency.GBP.value
 
 
 @strawberry.type

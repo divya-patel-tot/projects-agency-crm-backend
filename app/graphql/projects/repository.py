@@ -67,6 +67,17 @@ async def get_projects_by_ids(db: AsyncSession, project_ids: list[UUID]) -> list
     return list(result.scalars().all())
 
 
+async def get_projects_by_company_ids(db: AsyncSession, company_ids: list[UUID]) -> list[Project]:
+    if not company_ids:
+        return []
+    result = await db.execute(
+        select(Project)
+        .where(Project.company_id.in_(company_ids), Project.deleted_at.is_(None))
+        .order_by(Project.name)
+    )
+    return list(result.scalars().all())
+
+
 async def get_members_by_project_ids(db: AsyncSession, project_ids: list[UUID]) -> list[tuple[UUID, User]]:
     if not project_ids:
         return []

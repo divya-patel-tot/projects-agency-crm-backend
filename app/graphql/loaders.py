@@ -17,7 +17,11 @@ from app.graphql.planning.repository import (
     get_tasks_by_phase_ids,
     get_tasks_by_project_ids,
 )
-from app.graphql.projects.repository import get_contacts_by_project_ids, get_members_by_project_ids
+from app.graphql.projects.repository import (
+    get_contacts_by_project_ids,
+    get_members_by_project_ids,
+    get_projects_by_company_ids,
+)
 
 
 def _group_by(rows, key_fn, keys):
@@ -45,6 +49,16 @@ def get_contacts_by_company_loader(context) -> DataLoader:
         return _group_by(contacts, lambda c: c.company_id, company_ids)
 
     return _make_loader(context, "_contacts_by_company_loader", load_fn)
+
+
+def get_projects_by_company_loader(context) -> DataLoader:
+    async def load_fn(company_ids: list[UUID]) -> list[list]:
+        if context.db is None:
+            return [[] for _ in company_ids]
+        projects = await get_projects_by_company_ids(context.db, company_ids)
+        return _group_by(projects, lambda p: p.company_id, company_ids)
+
+    return _make_loader(context, "_projects_by_company_loader", load_fn)
 
 
 def get_phases_by_project_loader(context) -> DataLoader:

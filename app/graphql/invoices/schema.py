@@ -7,6 +7,7 @@ from strawberry.types import Info
 
 from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
+from app.db.enums import Currency
 from app.graphql.invoices.service import (
     create_invoice_record,
     delete_invoice_record,
@@ -14,6 +15,7 @@ from app.graphql.invoices.service import (
     get_invoices,
     update_invoice_record,
 )
+from app.graphql.loaders import get_projects_by_company_loader
 
 
 def _gql_error(exc: Exception) -> None:
@@ -51,6 +53,22 @@ class InvoiceType:
             notes=row.notes,
             created_at=row.created_at,
         )
+
+    @strawberry.field
+    async def currency(self, info: Info) -> str:
+        # Invoices don't carry their own currency. If the invoice is tied to
+        # a specific project, use that project's currency; otherwise fall
+        # back to the client's projects, defaulting to GBP if there are none.
+        if self.project_id is not None and info.context.db is not None:
+            from app.db.models.project import Project
+
+            project = await info.context.db.get(Project, UUID(str(self.project_id)))
+            if project is not None:
+                return project.currency
+
+        loader = get_projects_by_company_loader(info.context)
+        projects = await loader.load(UUID(str(self.company_id)))
+        return projects[0].currency if projects else Currency.GBP.value
 
 
 @strawberry.type
