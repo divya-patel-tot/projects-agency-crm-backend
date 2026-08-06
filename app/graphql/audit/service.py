@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.graphql.audit.repository import list_activity_logs
+from app.graphql.audit.repository import count_activity_logs, list_activity_logs
 
 
 async def get_audit_logs(
@@ -27,6 +27,19 @@ async def get_audit_logs(
         end_at=end_at,
         limit=limit,
         offset=offset,
+    )
+
+
+async def get_audit_logs_count(
+    db: AsyncSession,
+    *,
+    entity_type: str | None = None,
+    actor_id: UUID | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> int:
+    return await count_activity_logs(
+        db, entity_type=entity_type, actor_id=actor_id, start_at=start_at, end_at=end_at
     )
 
 

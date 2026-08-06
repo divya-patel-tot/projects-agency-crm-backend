@@ -5,7 +5,7 @@ import strawberry
 from strawberry.types import Info
 
 from app.core.deps import require_role
-from app.graphql.audit.service import get_audit_logs
+from app.graphql.audit.service import get_audit_logs, get_audit_logs_count
 
 
 @strawberry.type
@@ -55,3 +55,21 @@ class AuditQuery:
             offset=offset,
         )
         return [ActivityLogType.from_model(r) for r in rows]
+
+    @strawberry.field
+    async def activity_logs_count(
+        self,
+        info: Info,
+        entity_type: str | None = None,
+        actor_id: strawberry.ID | None = None,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> int:
+        ctx = require_role(info.context, "admin", "project_manager")
+        return await get_audit_logs_count(
+            ctx.db,
+            entity_type=entity_type,
+            actor_id=UUID(str(actor_id)) if actor_id else None,
+            start_at=start_at,
+            end_at=end_at,
+        )
