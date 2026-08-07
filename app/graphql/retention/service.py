@@ -10,6 +10,8 @@ from app.core.exceptions import DomainError, NotFoundError
 from app.db.enums import (
     EnrollmentStatus,
     ProjectStatus,
+    SequenceSource,
+    SequenceStatus,
     SequenceTriggerType,
     TouchpointChannel,
     TouchpointOutcome,
@@ -24,6 +26,7 @@ from app.db.models.retention import (
     Touchpoint,
 )
 from app.db.models.user import User
+from app.graphql.retention.ai_assist import draft_retention_sequence
 from app.graphql.retention.repository import (
     get_active_sequences_by_trigger,
     get_email_template,
@@ -41,16 +44,70 @@ from app.graphql.retention.repository import (
 
 
 def _sequence_dict(seq: RetentionSequence) -> dict:
-    return {"id": str(seq.id), "name": seq.name, "trigger_type": seq.trigger_type}
+    return {
+        "id": str(seq.id),
+        "name": seq.name,
+        "trigger_type": seq.trigger_type,
+        "company_id": str(seq.company_id) if seq.company_id else None,
+        "status": seq.status,
+        "source": seq.source,
+    }
 
 
-async def list_retention_sequences(db: AsyncSession, *, active_only: bool = False) -> list[RetentionSequence]:
-    return await list_sequences(db, active_only=active_only)
+_PM_ADMIN_ROLES = {"admin", "project_manager"}
+_ENROLLABLE_STATUSES = {SequenceStatus.APPROVED.value, SequenceStatus.ACTIVE.value}
+_RESTRICTED_STATUSES = {SequenceStatus.PENDING.value, SequenceStatus.DRAFT.value, SequenceStatus.REJECTED.value}
 
 
-async def get_retention_sequence(db: AsyncSession, sequence_id: UUID) -> RetentionSequence:
+def _can_view_sequence(actor: User, seq: RetentionSequence) -> bool:
+    if actor.role in _PM_ADMIN_ROLES:
+        return True
+    return seq.status not in _RESTRICTED_STATUSES
+
+
+def _is_sequence_enrollable(sequence: RetentionSequence) -> bool:
+    return (
+        sequence.status in _ENROLLABLE_STATUSES
+        and sequence.is_active
+        and not sequence.is_template
+    )
+
+
+async def list_retention_sequences(
+    db: AsyncSession,
+    *,
+    actor: User,
+    active_only: bool = False,
+    company_id: UUID | None = None,
+    status: str | None = None,
+    source: str | None = None,
+    created_by_id: UUID | None = None,
+    created_after: datetime | None = None,
+    created_before: datetime | None = None,
+    search: str | None = None,
+) -> list[RetentionSequence]:
+    exclude_statuses = None
+    if actor.role not in _PM_ADMIN_ROLES:
+        exclude_statuses = list(_RESTRICTED_STATUSES)
+    return await list_sequences(
+        db,
+        active_only=active_only,
+        company_id=company_id,
+        status=status,
+        source=source,
+        created_by_id=created_by_id,
+        created_after=created_after,
+        created_before=created_before,
+        search=search,
+        exclude_statuses=exclude_statuses,
+    )
+
+
+async def get_retention_sequence(db: AsyncSession, sequence_id: UUID, *, actor: User | None = None) -> RetentionSequence:
     seq = await get_sequence(db, sequence_id)
     if seq is None:
+        raise NotFoundError("Sequence not found")
+    if actor is not None and not _can_view_sequence(actor, seq):
         raise NotFoundError("Sequence not found")
     return seq
 
@@ -60,16 +117,27 @@ async def create_sequence_record(
     *,
     actor: User,
     name: str,
+    company_id: UUID,
     trigger_type: str = SequenceTriggerType.MANUAL.value,
-    is_active: bool = True,
+    description: str | None = None,
+    is_active: bool = False,
     is_template: bool = False,
+    status: str = SequenceStatus.DRAFT.value,
+    source: str = SequenceSource.MANUAL.value,
+    ai_rationale: str | None = None,
 ) -> RetentionSequence:
     seq = RetentionSequence(
         org_id=actor.org_id,
         name=name,
+        company_id=company_id,
+        description=description,
         trigger_type=trigger_type,
         is_active=is_active,
         is_template=is_template,
+        status=status,
+        source=source,
+        created_by_id=actor.id,
+        ai_rationale=ai_rationale,
     )
     db.add(seq)
     await db.flush()
@@ -92,7 +160,9 @@ async def update_sequence_record(
     sequence_id: UUID,
     updates: dict,
 ) -> RetentionSequence:
-    seq = await get_retention_sequence(db, sequence_id)
+    seq = await get_retention_sequence(db, sequence_id, actor=actor)
+    if seq.status in {SequenceStatus.PENDING.value, SequenceStatus.REJECTED.value}:
+        raise DomainError("This sequence cannot be edited in its current status", code="conflict")
     before = _sequence_dict(seq)
     for key, value in updates.items():
         if value is not None and hasattr(seq, key):
@@ -111,16 +181,19 @@ async def update_sequence_record(
 
 
 async def duplicate_sequence_record(db: AsyncSession, *, actor: User, sequence_id: UUID) -> RetentionSequence:
-    source = await get_retention_sequence(db, sequence_id)
-    if not source.is_template:
-        raise DomainError("Only template sequences can be duplicated", code="validation_error")
-
+    source = await get_retention_sequence(db, sequence_id, actor=actor)
     clone = RetentionSequence(
         org_id=actor.org_id,
         name=f"{source.name} (copy)",
+        company_id=source.company_id,
+        description=source.description,
         trigger_type=source.trigger_type,
-        is_active=True,
+        is_active=False,
         is_template=False,
+        status=SequenceStatus.DRAFT.value,
+        source=SequenceSource.MANUAL.value,
+        created_by_id=actor.id,
+        ai_rationale=source.ai_rationale,
     )
     db.add(clone)
     await db.flush()
@@ -135,10 +208,12 @@ async def duplicate_sequence_record(db: AsyncSession, *, actor: User, sequence_i
                 offset_days=step.offset_days,
                 template_id=step.template_id,
                 assignee_role=step.assignee_role,
+                name=step.name,
+                action_message=step.action_message,
             )
         )
     await db.flush()
-    return await get_retention_sequence(db, clone.id)
+    return await get_retention_sequence(db, clone.id, actor=actor)
 
 
 async def add_sequence_step(
@@ -151,8 +226,12 @@ async def add_sequence_step(
     step_order: int | None = None,
     template_id: UUID | None = None,
     assignee_role: str | None = None,
+    name: str | None = None,
+    action_message: str | None = None,
 ) -> RetentionSequenceStep:
-    await get_retention_sequence(db, sequence_id)
+    seq = await get_retention_sequence(db, sequence_id, actor=actor)
+    if seq.status in {SequenceStatus.PENDING.value, SequenceStatus.REJECTED.value}:
+        raise DomainError("This sequence cannot be edited in its current status", code="conflict")
     existing = await list_steps_for_sequence(db, sequence_id)
     order = step_order if step_order is not None else len(existing)
     step = RetentionSequenceStep(
@@ -163,8 +242,41 @@ async def add_sequence_step(
         offset_days=offset_days,
         template_id=template_id,
         assignee_role=assignee_role,
+        name=name,
+        action_message=action_message,
     )
     db.add(step)
+    await db.flush()
+    return step
+
+
+async def update_sequence_step(
+    db: AsyncSession,
+    *,
+    actor: User,
+    step_id: UUID,
+    channel: str | None = None,
+    offset_days: int | None = None,
+    assignee_role: str | None = None,
+    name: str | None = None,
+    action_message: str | None = None,
+) -> RetentionSequenceStep:
+    step = await get_step(db, step_id)
+    if step is None:
+        raise NotFoundError("Step not found")
+    seq = await get_retention_sequence(db, step.sequence_id, actor=actor)
+    if seq.status in {SequenceStatus.PENDING.value, SequenceStatus.REJECTED.value}:
+        raise DomainError("This sequence cannot be edited in its current status", code="conflict")
+    if channel is not None:
+        step.channel = channel
+    if offset_days is not None:
+        step.offset_days = offset_days
+    if assignee_role is not None:
+        step.assignee_role = assignee_role or None
+    if name is not None:
+        step.name = name or None
+    if action_message is not None:
+        step.action_message = action_message or None
     await db.flush()
     return step
 
@@ -178,6 +290,9 @@ async def remove_sequence_step(
     step = await get_step(db, step_id)
     if step is None:
         raise NotFoundError("Step not found")
+    seq = await get_retention_sequence(db, step.sequence_id, actor=actor)
+    if seq.status in {SequenceStatus.PENDING.value, SequenceStatus.REJECTED.value}:
+        raise DomainError("This sequence cannot be edited in its current status", code="conflict")
     await db.delete(step)
     await db.flush()
 
@@ -189,6 +304,7 @@ async def reorder_sequence_steps(
     sequence_id: UUID,
     ordered_step_ids: list[UUID],
 ) -> list[RetentionSequenceStep]:
+    await get_retention_sequence(db, sequence_id, actor=actor)
     steps = await list_steps_for_sequence(db, sequence_id)
     step_map = {s.id: s for s in steps}
     if set(step_map.keys()) != set(ordered_step_ids):
@@ -209,8 +325,8 @@ async def _create_enrollment(
     project_id: UUID | None = None,
     actor_id: UUID | None = None,
 ) -> RetentionEnrollment:
-    if not sequence.is_active or sequence.is_template:
-        raise DomainError("Sequence is not enrollable", code="conflict")
+    if not _is_sequence_enrollable(sequence):
+        raise DomainError("Sequence is not approved for enrollment", code="conflict")
     steps = await list_steps_for_sequence(db, sequence.id)
     if not steps:
         raise DomainError("Sequence has no steps", code="validation_error")
@@ -251,9 +367,11 @@ async def enroll_in_sequence(
     contact_id: UUID,
     project_id: UUID | None = None,
 ) -> RetentionEnrollment:
-    sequence = await get_retention_sequence(db, sequence_id)
+    sequence = await get_retention_sequence(db, sequence_id, actor=actor)
     if sequence.trigger_type != SequenceTriggerType.MANUAL.value:
         raise DomainError("Use auto-enrollment for non-manual trigger sequences", code="validation_error")
+    if sequence.company_id and sequence.company_id != company_id:
+        raise DomainError("This sequence belongs to a different client company", code="validation_error")
     return await _create_enrollment(
         db,
         org_id=actor.org_id,
@@ -274,7 +392,9 @@ async def enroll_renewal_sequences(
     actor_id: UUID | None = None,
 ) -> list[RetentionEnrollment]:
     """Enroll company in all active ON_RENEWAL_APPROACHING sequences (idempotent per sequence)."""
-    sequences = await get_active_sequences_by_trigger(db, SequenceTriggerType.ON_RENEWAL_APPROACHING.value)
+    sequences = await get_active_sequences_by_trigger(
+        db, SequenceTriggerType.ON_RENEWAL_APPROACHING.value, company_id=company_id,
+    )
     enrollments: list[RetentionEnrollment] = []
     for sequence in sequences:
         if await has_active_enrollment_for_sequence(db, company_id=company_id, sequence_id=sequence.id):
@@ -304,7 +424,7 @@ async def try_auto_enroll(
     if trigger_type == SequenceTriggerType.ON_RENEWAL_APPROACHING.value:
         return []
 
-    sequences = await get_active_sequences_by_trigger(db, trigger_type)
+    sequences = await get_active_sequences_by_trigger(db, trigger_type, company_id=company_id)
     enrollments: list[RetentionEnrollment] = []
     for sequence in sequences:
         enrollment = await _create_enrollment(
@@ -462,6 +582,125 @@ async def get_upcoming_touchpoints(db: AsyncSession) -> list[Touchpoint]:
 
 async def get_touchpoints_for_company(db: AsyncSession, company_id: UUID) -> list[Touchpoint]:
     return await list_touchpoints_for_company(db, company_id)
+
+
+async def submit_sequence_for_approval(
+    db: AsyncSession,
+    *,
+    actor: User,
+    sequence_id: UUID,
+) -> RetentionSequence:
+    seq = await get_retention_sequence(db, sequence_id, actor=actor)
+    if seq.status not in {SequenceStatus.DRAFT.value}:
+        raise DomainError("Only draft sequences can be submitted for approval", code="validation_error")
+    if not seq.company_id:
+        raise DomainError("Link this sequence to a client company before submitting", code="validation_error")
+    steps = await list_steps_for_sequence(db, sequence_id)
+    if not steps:
+        raise DomainError("Add at least one step before submitting", code="validation_error")
+    seq.status = SequenceStatus.PENDING.value
+    seq.is_active = False
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="submit_for_approval",
+        entity_type="retention_sequence",
+        entity_id=seq.id,
+        diff={"status": seq.status},
+    )
+    return seq
+
+
+async def approve_retention_sequence(
+    db: AsyncSession,
+    *,
+    actor: User,
+    sequence_id: UUID,
+) -> RetentionSequence:
+    seq = await get_retention_sequence(db, sequence_id, actor=actor)
+    if seq.status != SequenceStatus.PENDING.value:
+        raise DomainError("Only pending sequences can be approved", code="validation_error")
+    now = datetime.now(UTC)
+    seq.status = SequenceStatus.APPROVED.value
+    seq.is_active = True
+    seq.approved_by_id = actor.id
+    seq.approved_at = now
+    seq.rejection_reason = None
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="approve",
+        entity_type="retention_sequence",
+        entity_id=seq.id,
+        diff={"status": seq.status},
+    )
+    return seq
+
+
+async def reject_retention_sequence(
+    db: AsyncSession,
+    *,
+    actor: User,
+    sequence_id: UUID,
+    reason: str | None = None,
+) -> RetentionSequence:
+    seq = await get_retention_sequence(db, sequence_id, actor=actor)
+    if seq.status != SequenceStatus.PENDING.value:
+        raise DomainError("Only pending sequences can be rejected", code="validation_error")
+    seq.status = SequenceStatus.REJECTED.value
+    seq.is_active = False
+    seq.rejection_reason = reason
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="reject",
+        entity_type="retention_sequence",
+        entity_id=seq.id,
+        diff={"status": seq.status, "reason": reason},
+    )
+    return seq
+
+
+async def generate_ai_retention_sequence(
+    db: AsyncSession,
+    *,
+    actor: User,
+    company_id: UUID,
+) -> RetentionSequence:
+    draft = await draft_retention_sequence(db, actor=actor, company_id=company_id)
+    seq = await create_sequence_record(
+        db,
+        actor=actor,
+        name=draft.name,
+        company_id=company_id,
+        trigger_type=draft.trigger_type,
+        description=draft.description,
+        is_active=False,
+        status=SequenceStatus.DRAFT.value,
+        source=SequenceSource.AI.value,
+        ai_rationale=draft.strategy_summary,
+    )
+    for index, step in enumerate(draft.steps):
+        await add_sequence_step(
+            db,
+            actor=actor,
+            sequence_id=seq.id,
+            channel=step.channel,
+            offset_days=step.offset_days,
+            step_order=index,
+            assignee_role=step.assignee_role,
+            name=step.name,
+            action_message=step.action_message,
+        )
+    seq.status = SequenceStatus.PENDING.value
+    await db.flush()
+    return await get_retention_sequence(db, seq.id, actor=actor)
 
 
 async def create_email_template_record(

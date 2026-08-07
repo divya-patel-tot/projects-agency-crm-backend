@@ -29,12 +29,14 @@ def _company_to_dict(company: Company) -> dict:
 
 async def get_companies(db: AsyncSession, *, actor: User | None = None) -> list[Company]:
     member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
-    return await list_companies(db, member_user_id)
+    org_id = actor.org_id if actor is not None else None
+    return await list_companies(db, org_id=org_id, member_user_id=member_user_id)
 
 
 async def get_company_by_id(db: AsyncSession, company_id: UUID, *, actor: User | None = None) -> Company:
     member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
-    company = await get_company(db, company_id, member_user_id)
+    org_id = actor.org_id if actor is not None else None
+    company = await get_company(db, company_id, org_id=org_id, member_user_id=member_user_id)
     if company is None:
         raise NotFoundError("Company not found")
     return company
@@ -88,7 +90,7 @@ async def update_company_record(
     company_id: UUID,
     updates: dict,
 ) -> Company:
-    company = await get_company_by_id(db, company_id)
+    company = await get_company_by_id(db, company_id, actor=actor)
     before = _company_to_dict(company)
     for key, value in updates.items():
         if value is not None and hasattr(company, key):
@@ -107,7 +109,7 @@ async def update_company_record(
 
 
 async def delete_company_record(db: AsyncSession, *, actor: User, company_id: UUID) -> Company:
-    company = await get_company_by_id(db, company_id)
+    company = await get_company_by_id(db, company_id, actor=actor)
     before = _company_to_dict(company)
     await soft_delete_company(db, company)
     await write_activity_log(

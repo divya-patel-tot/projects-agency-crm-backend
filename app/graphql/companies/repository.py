@@ -17,8 +17,15 @@ def _member_company_ids_subquery(member_user_id: UUID):
     )
 
 
-async def list_companies(db: AsyncSession, member_user_id: UUID | None = None) -> list[Company]:
+async def list_companies(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None = None,
+    member_user_id: UUID | None = None,
+) -> list[Company]:
     stmt = select(Company).where(Company.deleted_at.is_(None)).order_by(Company.name)
+    if org_id is not None:
+        stmt = stmt.where(Company.org_id == org_id)
     if member_user_id:
         stmt = stmt.where(Company.id.in_(_member_company_ids_subquery(member_user_id)))
     result = await db.execute(stmt)
@@ -26,9 +33,15 @@ async def list_companies(db: AsyncSession, member_user_id: UUID | None = None) -
 
 
 async def get_company(
-    db: AsyncSession, company_id: UUID, member_user_id: UUID | None = None
+    db: AsyncSession,
+    company_id: UUID,
+    *,
+    org_id: UUID | None = None,
+    member_user_id: UUID | None = None,
 ) -> Company | None:
     stmt = select(Company).where(Company.id == company_id, Company.deleted_at.is_(None))
+    if org_id is not None:
+        stmt = stmt.where(Company.org_id == org_id)
     if member_user_id:
         stmt = stmt.where(Company.id.in_(_member_company_ids_subquery(member_user_id)))
     result = await db.execute(stmt)

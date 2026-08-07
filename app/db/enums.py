@@ -145,6 +145,19 @@ class SequenceTriggerType(StrEnum):
     ON_RENEWAL_APPROACHING = "on_renewal_approaching"
 
 
+class SequenceStatus(StrEnum):
+    DRAFT = "draft"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    ACTIVE = "active"
+
+
+class SequenceSource(StrEnum):
+    AI = "ai"
+    MANUAL = "manual"
+
+
 class TouchpointChannel(StrEnum):
     EMAIL = "email"
     CALL = "call"

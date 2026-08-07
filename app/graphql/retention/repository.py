@@ -1,11 +1,11 @@
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.enums import EnrollmentStatus, SequenceTriggerType, TouchpointStatus
+from app.db.enums import EnrollmentStatus, SequenceStatus, SequenceTriggerType, TouchpointStatus
 from app.db.models.retention import (
     EmailTemplate,
     JobRun,
@@ -16,15 +16,49 @@ from app.db.models.retention import (
 )
 
 
-async def list_sequences(db: AsyncSession, *, active_only: bool = False) -> list[RetentionSequence]:
+async def list_sequences(
+    db: AsyncSession,
+    *,
+    active_only: bool = False,
+    company_id: UUID | None = None,
+    status: str | None = None,
+    source: str | None = None,
+    created_by_id: UUID | None = None,
+    created_after: datetime | None = None,
+    created_before: datetime | None = None,
+    search: str | None = None,
+    exclude_statuses: list[str] | None = None,
+) -> list[RetentionSequence]:
     query = (
         select(RetentionSequence)
         .where(RetentionSequence.deleted_at.is_(None))
         .options(selectinload(RetentionSequence.steps))
-        .order_by(RetentionSequence.name.asc())
+        .order_by(RetentionSequence.created_at.desc())
     )
     if active_only:
-        query = query.where(RetentionSequence.is_active.is_(True))
+        query = query.where(
+            RetentionSequence.is_active.is_(True),
+            RetentionSequence.status.in_([SequenceStatus.APPROVED.value, SequenceStatus.ACTIVE.value]),
+        )
+    if company_id is not None:
+        query = query.where(RetentionSequence.company_id == company_id)
+    if status is not None:
+        query = query.where(RetentionSequence.status == status)
+    if source is not None:
+        query = query.where(RetentionSequence.source == source)
+    if created_by_id is not None:
+        query = query.where(RetentionSequence.created_by_id == created_by_id)
+    if created_after is not None:
+        query = query.where(RetentionSequence.created_at >= created_after)
+    if created_before is not None:
+        query = query.where(RetentionSequence.created_at <= created_before)
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(RetentionSequence.name.ilike(term), RetentionSequence.description.ilike(term)),
+        )
+    if exclude_statuses:
+        query = query.where(RetentionSequence.status.notin_(exclude_statuses))
     result = await db.execute(query)
     return list(result.scalars().unique().all())
 
@@ -38,17 +72,23 @@ async def get_sequence(db: AsyncSession, sequence_id: UUID) -> RetentionSequence
     return result.scalar_one_or_none()
 
 
-async def get_active_sequences_by_trigger(db: AsyncSession, trigger_type: str) -> list[RetentionSequence]:
-    result = await db.execute(
-        select(RetentionSequence)
-        .where(
-            RetentionSequence.trigger_type == trigger_type,
-            RetentionSequence.is_active.is_(True),
-            RetentionSequence.is_template.is_(False),
-            RetentionSequence.deleted_at.is_(None),
-        )
-        .options(selectinload(RetentionSequence.steps))
+async def get_active_sequences_by_trigger(
+    db: AsyncSession,
+    trigger_type: str,
+    *,
+    company_id: UUID | None = None,
+) -> list[RetentionSequence]:
+    query = select(RetentionSequence).where(
+        RetentionSequence.trigger_type == trigger_type,
+        RetentionSequence.is_active.is_(True),
+        RetentionSequence.is_template.is_(False),
+        RetentionSequence.deleted_at.is_(None),
+        RetentionSequence.status.in_([SequenceStatus.APPROVED.value, SequenceStatus.ACTIVE.value]),
     )
+    if company_id is not None:
+        query = query.where(RetentionSequence.company_id == company_id)
+    query = query.options(selectinload(RetentionSequence.steps))
+    result = await db.execute(query)
     return list(result.scalars().unique().all())
 
 

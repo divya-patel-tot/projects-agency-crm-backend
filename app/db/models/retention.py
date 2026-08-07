@@ -5,7 +5,15 @@ from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Stri
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.enums import EnrollmentStatus, SequenceTriggerType, TouchpointChannel, TouchpointOutcome, TouchpointStatus
+from app.db.enums import (
+    EnrollmentStatus,
+    SequenceSource,
+    SequenceStatus,
+    SequenceTriggerType,
+    TouchpointChannel,
+    TouchpointOutcome,
+    TouchpointStatus,
+)
 from app.db.models.base import Base, OrgScopedMixin, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -19,11 +27,21 @@ class EmailTemplate(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, S
 
 class RetentionSequence(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "retention_sequences"
+    __table_args__ = (Index("ix_retention_sequences_company_status", "company_id", "status"),)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     trigger_type: Mapped[str] = mapped_column(String(64), nullable=False, default=SequenceTriggerType.MANUAL.value)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_template: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=SequenceStatus.DRAFT.value)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default=SequenceSource.MANUAL.value)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    approved_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     steps: Mapped[list["RetentionSequenceStep"]] = relationship(
         back_populates="sequence",
@@ -44,6 +62,8 @@ class RetentionSequenceStep(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, Timestamp
     offset_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     template_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("email_templates.id"), nullable=True)
     assignee_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    action_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     sequence: Mapped["RetentionSequence"] = relationship(back_populates="steps")
 

@@ -15,21 +15,27 @@ from app.graphql.companies.service import get_company_by_id
 from app.graphql.contacts.schema import ContactType
 from app.graphql.retention.service import (
     add_sequence_step as add_sequence_step_service,
+    approve_retention_sequence,
     cancel_enrollment,
     complete_touchpoint,
     create_sequence_record,
     duplicate_sequence_record,
     enroll_in_sequence,
+    generate_ai_retention_sequence,
     get_retention_sequence,
     get_touchpoints_for_company,
     get_upcoming_touchpoints,
     list_retention_sequences,
     log_touchpoint as log_touchpoint_service,
+    reject_retention_sequence,
     remove_sequence_step as remove_sequence_step_service,
-    reorder_sequence_steps,
+    reorder_sequence_steps as reorder_sequence_steps_service,
     skip_touchpoint,
+    submit_sequence_for_approval,
     update_sequence_record,
+    update_sequence_step as update_sequence_step_service,
 )
+from app.graphql.users.schema import UserSummaryType
 
 
 def _gql_error(exc: Exception) -> None:
@@ -63,6 +69,8 @@ class SequenceStepType:
     offset_days: int
     template_id: strawberry.ID | None
     assignee_role: str | None
+    name: str | None
+    action_message: str | None
 
     @classmethod
     def from_model(cls, row) -> "SequenceStepType":
@@ -73,6 +81,8 @@ class SequenceStepType:
             offset_days=row.offset_days,
             template_id=strawberry.ID(str(row.template_id)) if row.template_id else None,
             assignee_role=row.assignee_role,
+            name=row.name,
+            action_message=row.action_message,
         )
 
 
@@ -83,6 +93,14 @@ class RetentionSequenceType:
     trigger_type: str
     is_active: bool
     is_template: bool
+    description: str | None
+    status: str
+    source: str
+    company_id: strawberry.ID | None
+    created_at: datetime
+    approved_at: datetime | None
+    rejection_reason: str | None
+    ai_rationale: str | None
 
     @classmethod
     def from_model(cls, row) -> "RetentionSequenceType":
@@ -92,7 +110,50 @@ class RetentionSequenceType:
             trigger_type=row.trigger_type,
             is_active=row.is_active,
             is_template=row.is_template,
+            description=row.description,
+            status=row.status,
+            source=row.source,
+            company_id=strawberry.ID(str(row.company_id)) if row.company_id else None,
+            created_at=row.created_at,
+            approved_at=row.approved_at,
+            rejection_reason=row.rejection_reason,
+            ai_rationale=row.ai_rationale,
         )
+
+    @strawberry.field
+    async def company(self, info: Info) -> CompanyType | None:
+        if not self.company_id:
+            return None
+        from app.graphql.companies.service import get_company_by_id
+
+        ctx = require_authenticated(info.context)
+        try:
+            company = await get_company_by_id(ctx.db, UUID(str(self.company_id)), actor=ctx.user)
+            return company_from_model(company)
+        except Exception:
+            return None
+
+    @strawberry.field
+    async def created_by(self, info: Info) -> UserSummaryType | None:
+        from app.db.models.user import User
+
+        ctx = require_authenticated(info.context)
+        seq = await get_retention_sequence(ctx.db, UUID(str(self.id)), actor=ctx.user)
+        if not seq.created_by_id:
+            return None
+        user = await ctx.db.get(User, seq.created_by_id)
+        return UserSummaryType.from_model(user) if user else None
+
+    @strawberry.field
+    async def approved_by(self, info: Info) -> UserSummaryType | None:
+        from app.db.models.user import User
+
+        ctx = require_authenticated(info.context)
+        seq = await get_retention_sequence(ctx.db, UUID(str(self.id)), actor=ctx.user)
+        if not seq.approved_by_id:
+            return None
+        user = await ctx.db.get(User, seq.approved_by_id)
+        return UserSummaryType.from_model(user) if user else None
 
     @strawberry.field
     async def steps(self, info: Info) -> list[SequenceStepType]:
@@ -219,16 +280,38 @@ class TouchpointType:
 @strawberry.type
 class RetentionQuery:
     @strawberry.field
-    async def retention_sequences(self, info: Info, active_only: bool = False) -> list[RetentionSequenceType]:
+    async def retention_sequences(
+        self,
+        info: Info,
+        active_only: bool = False,
+        company_id: strawberry.ID | None = None,
+        status: str | None = None,
+        source: str | None = None,
+        created_by_id: strawberry.ID | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
+        search: str | None = None,
+    ) -> list[RetentionSequenceType]:
         ctx = require_role(info.context, "admin", "project_manager")
-        rows = await list_retention_sequences(ctx.db, active_only=active_only)
+        rows = await list_retention_sequences(
+            ctx.db,
+            actor=ctx.user,
+            active_only=active_only,
+            company_id=UUID(str(company_id)) if company_id else None,
+            status=status,
+            source=source,
+            created_by_id=UUID(str(created_by_id)) if created_by_id else None,
+            created_after=created_after,
+            created_before=created_before,
+            search=search,
+        )
         return [RetentionSequenceType.from_model(r) for r in rows]
 
     @strawberry.field
     async def retention_sequence(self, info: Info, id: strawberry.ID) -> RetentionSequenceType | None:
         ctx = require_role(info.context, "admin", "project_manager")
         try:
-            row = await get_retention_sequence(ctx.db, UUID(str(id)))
+            row = await get_retention_sequence(ctx.db, UUID(str(id)), actor=ctx.user)
             return RetentionSequenceType.from_model(row)
         except NotFoundError:
             return None
@@ -257,17 +340,75 @@ class RetentionMutation:
         self,
         info: Info,
         name: str,
+        company_id: strawberry.ID,
         trigger_type: str = "manual",
+        description: str | None = None,
         is_template: bool = False,
+        submit_for_approval: bool = False,
     ) -> RetentionSequenceType:
         ctx = require_role(info.context, "admin", "project_manager")
         try:
+            status = "pending" if submit_for_approval else "draft"
             row = await create_sequence_record(
                 ctx.db,
                 actor=ctx.user,
                 name=name,
+                company_id=UUID(str(company_id)),
                 trigger_type=trigger_type,
+                description=description,
+                is_active=False,
                 is_template=is_template,
+                status=status,
+            )
+            return RetentionSequenceType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def generate_retention_sequence(self, info: Info, company_id: strawberry.ID) -> RetentionSequenceType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            row = await generate_ai_retention_sequence(
+                ctx.db,
+                actor=ctx.user,
+                company_id=UUID(str(company_id)),
+            )
+            return RetentionSequenceType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def submit_retention_sequence(self, info: Info, id: strawberry.ID) -> RetentionSequenceType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            row = await submit_sequence_for_approval(ctx.db, actor=ctx.user, sequence_id=UUID(str(id)))
+            return RetentionSequenceType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def approve_retention_sequence(self, info: Info, id: strawberry.ID) -> RetentionSequenceType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            row = await approve_retention_sequence(ctx.db, actor=ctx.user, sequence_id=UUID(str(id)))
+            return RetentionSequenceType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def reject_retention_sequence(
+        self,
+        info: Info,
+        id: strawberry.ID,
+        reason: str | None = None,
+    ) -> RetentionSequenceType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            row = await reject_retention_sequence(
+                ctx.db,
+                actor=ctx.user,
+                sequence_id=UUID(str(id)),
+                reason=reason,
             )
             return RetentionSequenceType.from_model(row)
         except Exception as exc:
@@ -275,7 +416,7 @@ class RetentionMutation:
 
     @strawberry.mutation
     async def duplicate_retention_sequence(self, info: Info, sequence_id: strawberry.ID) -> RetentionSequenceType:
-        ctx = require_role(info.context, "admin")
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await duplicate_sequence_record(ctx.db, actor=ctx.user, sequence_id=UUID(str(sequence_id)))
             return RetentionSequenceType.from_model(row)
@@ -289,6 +430,8 @@ class RetentionMutation:
         id: strawberry.ID,
         name: str | None = None,
         trigger_type: str | None = None,
+        description: str | None = None,
+        company_id: strawberry.ID | None = None,
         is_active: bool | None = None,
     ) -> RetentionSequenceType:
         ctx = require_role(info.context, "admin", "project_manager")
@@ -297,7 +440,13 @@ class RetentionMutation:
                 ctx.db,
                 actor=ctx.user,
                 sequence_id=UUID(str(id)),
-                updates={"name": name, "trigger_type": trigger_type, "is_active": is_active},
+                updates={
+                    "name": name,
+                    "trigger_type": trigger_type,
+                    "description": description,
+                    "company_id": UUID(str(company_id)) if company_id else None,
+                    "is_active": is_active,
+                },
             )
             return RetentionSequenceType.from_model(row)
         except Exception as exc:
@@ -321,6 +470,8 @@ class RetentionMutation:
         offset_days: int,
         template_id: strawberry.ID | None = None,
         assignee_role: str | None = None,
+        name: str | None = None,
+        action_message: str | None = None,
     ) -> SequenceStepType:
         ctx = require_role(info.context, "admin", "project_manager")
         try:
@@ -332,8 +483,56 @@ class RetentionMutation:
                 offset_days=offset_days,
                 template_id=UUID(str(template_id)) if template_id else None,
                 assignee_role=assignee_role,
+                name=name,
+                action_message=action_message,
             )
             return SequenceStepType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def update_sequence_step(
+        self,
+        info: Info,
+        step_id: strawberry.ID,
+        channel: str | None = None,
+        offset_days: int | None = None,
+        assignee_role: str | None = None,
+        name: str | None = None,
+        action_message: str | None = None,
+    ) -> SequenceStepType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            row = await update_sequence_step_service(
+                ctx.db,
+                actor=ctx.user,
+                step_id=UUID(str(step_id)),
+                channel=channel,
+                offset_days=offset_days,
+                assignee_role=assignee_role,
+                name=name,
+                action_message=action_message,
+            )
+            return SequenceStepType.from_model(row)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def reorder_sequence_steps(
+        self,
+        info: Info,
+        sequence_id: strawberry.ID,
+        ordered_step_ids: list[strawberry.ID],
+    ) -> list[SequenceStepType]:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            rows = await reorder_sequence_steps_service(
+                ctx.db,
+                actor=ctx.user,
+                sequence_id=UUID(str(sequence_id)),
+                ordered_step_ids=[UUID(str(step_id)) for step_id in ordered_step_ids],
+            )
+            return [SequenceStepType.from_model(r) for r in rows]
         except Exception as exc:
             _gql_error(exc)
 
