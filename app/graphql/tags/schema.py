@@ -3,7 +3,7 @@ from uuid import UUID
 import strawberry
 from strawberry.types import Info
 
-from app.core.deps import require_authenticated
+from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
 from app.db.models.tag import EntityTag, Tag
 from app.graphql.loaders import (
@@ -34,7 +34,7 @@ class TagQuery:
 class TagMutation:
     @strawberry.mutation
     async def create_tag(self, info: Info, name: str) -> TagType:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         tag = Tag(org_id=ctx.user.org_id, name=name.strip())
         row = await create_tag(ctx.db, tag)
         return TagType(id=strawberry.ID(str(row.id)), name=row.name)
@@ -47,7 +47,7 @@ class TagMutation:
         entity_id: strawberry.ID,
         tag_id: strawberry.ID,
     ) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             et = validate_entity_type(entity_type)
         except ValueError as exc:
@@ -69,7 +69,7 @@ class TagMutation:
         entity_id: strawberry.ID,
         tag_id: strawberry.ID,
     ) -> bool:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             et = validate_entity_type(entity_type)
         except ValueError as exc:

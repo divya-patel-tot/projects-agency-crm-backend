@@ -353,6 +353,11 @@ class ChangeRequestMutation:
         project = await get_project_for_cr(ctx.db, UUID(str(project_id)))
         if project is None:
             raise GraphQLError("Project not found", extensions={"code": "not_found"})
+        if not await actor_can_access_project(ctx.db, ctx.user, project.id):
+            raise GraphQLError(
+                "You don't have access to this project.",
+                extensions={"code": "authorization_error"},
+            )
         try:
             row = await create_change_request(
                 ctx.db,

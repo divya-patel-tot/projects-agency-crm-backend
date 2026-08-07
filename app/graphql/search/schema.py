@@ -2,6 +2,7 @@ import strawberry
 from strawberry.types import Info
 
 from app.core.deps import require_authenticated
+from app.db.enums import UserRole
 from app.graphql.companies.schema import CompanyType, company_from_model
 from app.graphql.contacts.schema import ContactType
 from app.graphql.planning.schema import TaskType
@@ -45,7 +46,8 @@ class SearchQuery:
         if len(cleaned) < EMPTY_QUERY_MIN_LENGTH:
             return _empty_results()
 
-        result = await search_workspace(ctx.db, query=cleaned)
+        member_user_id = ctx.user.id if ctx.user.role == UserRole.TEAM_MEMBER.value else None
+        result = await search_workspace(ctx.db, query=cleaned, member_user_id=member_user_id)
         return SearchResultsType(
             companies=[company_from_model(row) for row in result.companies],
             companies_count=result.companies_count,

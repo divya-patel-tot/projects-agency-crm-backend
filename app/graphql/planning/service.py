@@ -3,7 +3,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_activity_log
-from app.core.exceptions import DomainError, NotFoundError
+from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
+from app.db.enums import UserRole
 from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
 from app.db.models.user import User
@@ -21,6 +22,7 @@ from app.graphql.planning.repository import (
     validate_dependency_insert,
 )
 from app.graphql.projects.repository import ensure_project_member
+from app.graphql.projects.service import actor_can_access_project
 
 
 def _phase_dict(phase: ProjectPhase) -> dict:
@@ -290,6 +292,10 @@ async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, up
     task = await get_task(db, task_id)
     if task is None:
         raise NotFoundError("Task not found")
+    if actor.role == UserRole.TEAM_MEMBER.value and not await actor_can_access_project(
+        db, actor, task.project_id
+    ):
+        raise AuthorizationError("You don't have access to this project.")
     before = _task_dict(task)
     prev_assignee_id = task.assignee_id
     for key, value in updates.items():

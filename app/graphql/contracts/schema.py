@@ -5,7 +5,7 @@ import strawberry
 from graphql import GraphQLError
 from strawberry.types import Info
 
-from app.core.deps import require_authenticated, require_role
+from app.core.deps import require_role
 from app.core.exceptions import DomainError, NotFoundError
 from app.db.enums import Currency
 from app.graphql.contracts.service import (
@@ -67,7 +67,7 @@ class ContractQuery:
         company_id: strawberry.ID | None = None,
         status: str | None = None,
     ) -> list[ContractType]:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         rows = await get_contracts(
             ctx.db,
             company_id=UUID(str(company_id)) if company_id else None,
@@ -77,7 +77,7 @@ class ContractQuery:
 
     @strawberry.field
     async def contract(self, info: Info, id: strawberry.ID) -> ContractType | None:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await get_contract_by_id(ctx.db, UUID(str(id)))
             return ContractType.from_model(row)

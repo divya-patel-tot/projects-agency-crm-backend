@@ -11,6 +11,7 @@ from app.core.exceptions import DomainError, NotFoundError
 from app.db.enums import EnrollmentStatus
 from app.db.models.retention import RetentionEnrollment
 from app.graphql.companies.schema import CompanyType, company_from_model
+from app.graphql.companies.service import get_company_by_id
 from app.graphql.contacts.schema import ContactType
 from app.graphql.retention.service import (
     add_sequence_step as add_sequence_step_service,
@@ -219,13 +220,13 @@ class TouchpointType:
 class RetentionQuery:
     @strawberry.field
     async def retention_sequences(self, info: Info, active_only: bool = False) -> list[RetentionSequenceType]:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         rows = await list_retention_sequences(ctx.db, active_only=active_only)
         return [RetentionSequenceType.from_model(r) for r in rows]
 
     @strawberry.field
     async def retention_sequence(self, info: Info, id: strawberry.ID) -> RetentionSequenceType | None:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         try:
             row = await get_retention_sequence(ctx.db, UUID(str(id)))
             return RetentionSequenceType.from_model(row)
@@ -234,13 +235,17 @@ class RetentionQuery:
 
     @strawberry.field
     async def upcoming_touchpoints(self, info: Info) -> list[TouchpointType]:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         rows = await get_upcoming_touchpoints(ctx.db)
         return [TouchpointType.from_model(r) for r in rows]
 
     @strawberry.field(description="Full touchpoint history for a company — scheduled, completed and skipped.")
     async def company_touchpoints(self, info: Info, company_id: strawberry.ID) -> list[TouchpointType]:
         ctx = require_authenticated(info.context)
+        try:
+            await get_company_by_id(ctx.db, UUID(str(company_id)), actor=ctx.user)
+        except NotFoundError:
+            return []
         rows = await get_touchpoints_for_company(ctx.db, UUID(str(company_id)))
         return [TouchpointType.from_model(r) for r in rows]
 

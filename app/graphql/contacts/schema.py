@@ -70,14 +70,14 @@ class ContactQuery:
     @strawberry.field
     async def contacts(self, info: Info) -> list[ContactType]:
         ctx = require_authenticated(info.context)
-        rows = await get_contacts(ctx.db)
+        rows = await get_contacts(ctx.db, actor=ctx.user)
         return [ContactType.from_model(row) for row in rows]
 
     @strawberry.field
     async def contact(self, info: Info, id: strawberry.ID) -> ContactType | None:
         ctx = require_authenticated(info.context)
         try:
-            row = await get_contact_by_id(ctx.db, UUID(str(id)))
+            row = await get_contact_by_id(ctx.db, UUID(str(id)), actor=ctx.user)
         except Exception:
             return None
         return ContactType.from_model(row)

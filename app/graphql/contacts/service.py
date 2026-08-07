@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_activity_log
 from app.core.security import hash_password
 from app.core.exceptions import DomainError, NotFoundError
+from app.db.enums import UserRole
 from app.db.models.contact import Contact
 from app.db.models.user import User
 from app.graphql.contacts.repository import (
@@ -28,12 +29,14 @@ def _contact_to_dict(contact: Contact) -> dict:
     }
 
 
-async def get_contacts(db: AsyncSession) -> list[Contact]:
-    return await list_contacts(db)
+async def get_contacts(db: AsyncSession, *, actor: User | None = None) -> list[Contact]:
+    member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
+    return await list_contacts(db, member_user_id)
 
 
-async def get_contact_by_id(db: AsyncSession, contact_id: UUID) -> Contact:
-    contact = await get_contact(db, contact_id)
+async def get_contact_by_id(db: AsyncSession, contact_id: UUID, *, actor: User | None = None) -> Contact:
+    member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
+    contact = await get_contact(db, contact_id, member_user_id)
     if contact is None:
         raise NotFoundError("Contact not found")
     return contact
