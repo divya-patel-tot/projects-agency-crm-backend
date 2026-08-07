@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 import strawberry
@@ -6,6 +7,8 @@ from strawberry.types import Info
 
 from app.core.deps import require_authenticated, require_role
 from app.core.exceptions import DomainError, NotFoundError
+from app.graphql.companies.schema import CompanyType, company_from_model
+from app.graphql.companies.service import get_company_by_id
 from app.graphql.contacts.schema import ContactType
 from app.graphql.loaders import (
     get_contacts_by_project_loader,
@@ -49,6 +52,8 @@ class ProjectType:
     actual_cost: float | None
     currency: str
     health: str | None
+    start_date: date | None
+    end_date: date | None
 
     @classmethod
     def from_model(cls, project) -> "ProjectType":
@@ -66,7 +71,20 @@ class ProjectType:
             actual_cost=float(project.actual_cost) if project.actual_cost is not None else None,
             currency=project.currency,
             health=project.health,
+            start_date=project.start_date,
+            end_date=project.end_date,
         )
+
+    @strawberry.field
+    async def company(self, info: Info) -> CompanyType | None:
+        if info.context.db is None:
+            return None
+        ctx = require_authenticated(info.context)
+        try:
+            row = await get_company_by_id(ctx.db, UUID(str(self.company_id)), actor=ctx.user)
+        except NotFoundError:
+            return None
+        return company_from_model(row)
 
     @strawberry.field
     async def project_manager(self, info: Info) -> UserSummaryType | None:
@@ -141,6 +159,8 @@ class ProjectMutation:
         status: str = "planning",
         priority: str | None = None,
         project_manager_id: strawberry.ID | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         budget: float | None = None,
         currency: str = "GBP",
         health: str | None = "on_track",
@@ -156,6 +176,8 @@ class ProjectMutation:
                 status=status,
                 priority=priority,
                 project_manager_id=UUID(str(project_manager_id)) if project_manager_id else None,
+                start_date=start_date,
+                end_date=end_date,
                 budget=budget,
                 currency=currency,
                 health=health,
@@ -174,6 +196,8 @@ class ProjectMutation:
         status: str | None = None,
         priority: str | None = None,
         project_manager_id: strawberry.ID | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         budget: float | None = None,
         currency: str | None = None,
         health: str | None = None,
@@ -190,6 +214,8 @@ class ProjectMutation:
                     "status": status,
                     "priority": priority,
                     "project_manager_id": UUID(str(project_manager_id)) if project_manager_id else None,
+                    "start_date": start_date,
+                    "end_date": end_date,
                     "budget": budget,
                     "currency": currency,
                     "health": health,

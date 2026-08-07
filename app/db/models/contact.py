@@ -26,6 +26,7 @@ class Contact(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, SoftDel
     department: Mapped[str | None] = mapped_column(String(128), nullable=True)
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     preferred_channel: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    best_time_to_contact: Mapped[str | None] = mapped_column(String(128), nullable=True)
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     portal_access_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     portal_can_raise_requests: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

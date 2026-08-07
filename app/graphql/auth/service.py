@@ -41,6 +41,15 @@ class AuthResult:
     access_token: str | None = None
     refresh_token: str | None = None
     requires_2fa: bool = False
+
+
+def _2fa_enabled() -> bool:
+    return get_settings().enable_2fa
+
+
+def _require_2fa_feature() -> None:
+    if not _2fa_enabled():
+        raise DomainError("Two-factor authentication is not available.", code="feature_disabled")
     challenge_token: str | None = None
 
 
@@ -79,7 +88,7 @@ async def login(db: AsyncSession, *, email: str, password: str, request: Request
     user = users[0]
     if not verify_password(password, user.password_hash):
         raise AuthenticationError("Invalid credentials")
-    if user.totp_enabled and user.totp_secret:
+    if _2fa_enabled() and user.totp_enabled and user.totp_secret:
         challenge = create_challenge_token(sub=user.id, org_id=user.org_id, role=user.role)
         return AuthResult(requires_2fa=True, challenge_token=challenge)
     access, refresh = await _issue_tokens(db, user)
@@ -147,6 +156,7 @@ async def verify_totp_login(
     code: str,
     request: Request,
 ) -> tuple[str, str]:
+    _require_2fa_feature()
     _check_auth_rate_limit(request, "login")
     try:
         payload = decode_token(challenge_token)
@@ -210,6 +220,7 @@ async def logout(db: AsyncSession, *, refresh_token: str | None) -> None:
 
 
 async def enable_totp(db: AsyncSession, user: User) -> tuple[str, str]:
+    _require_2fa_feature()
     secret = generate_totp_secret()
     user.totp_secret = secret
     user.totp_enabled = False
@@ -219,6 +230,7 @@ async def enable_totp(db: AsyncSession, user: User) -> tuple[str, str]:
 
 
 async def confirm_totp(db: AsyncSession, user: User, code: str) -> None:
+    _require_2fa_feature()
     if not user.totp_secret:
         raise DomainError("TOTP setup not started")
     if not verify_totp_code(secret=user.totp_secret, code=code):

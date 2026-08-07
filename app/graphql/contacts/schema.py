@@ -30,6 +30,7 @@ class ContactType:
     department: str | None = None
     is_primary: bool
     preferred_channel: str | None = None
+    best_time_to_contact: str | None = None
     timezone: str | None = None
     portal_access_enabled: bool
     portal_can_raise_requests: bool
@@ -49,6 +50,7 @@ class ContactType:
             department=contact.department,
             is_primary=contact.is_primary,
             preferred_channel=contact.preferred_channel,
+            best_time_to_contact=contact.best_time_to_contact,
             timezone=contact.timezone,
             portal_access_enabled=contact.portal_access_enabled,
             portal_can_raise_requests=contact.portal_can_raise_requests,
@@ -102,6 +104,7 @@ class ContactMutation:
         department: str | None = None,
         is_primary: bool = False,
         preferred_channel: str | None = None,
+        best_time_to_contact: str | None = None,
         timezone: str | None = None,
         portal_access_enabled: bool = False,
         portal_can_raise_requests: bool = False,
@@ -123,6 +126,7 @@ class ContactMutation:
                 department=department,
                 is_primary=is_primary,
                 preferred_channel=preferred_channel,
+                best_time_to_contact=best_time_to_contact,
                 timezone=timezone,
                 portal_access_enabled=portal_access_enabled,
                 portal_can_raise_requests=portal_can_raise_requests,
@@ -147,6 +151,7 @@ class ContactMutation:
         department: str | None = None,
         is_primary: bool | None = None,
         preferred_channel: str | None = None,
+        best_time_to_contact: str | None = None,
         timezone: str | None = None,
         portal_access_enabled: bool | None = None,
         portal_can_raise_requests: bool | None = None,
@@ -164,6 +169,7 @@ class ContactMutation:
             "department": department,
             "is_primary": is_primary,
             "preferred_channel": preferred_channel,
+            "best_time_to_contact": best_time_to_contact,
             "timezone": timezone,
             "portal_access_enabled": portal_access_enabled,
             "portal_can_raise_requests": portal_can_raise_requests,

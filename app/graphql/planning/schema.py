@@ -72,6 +72,8 @@ class TaskType:
     priority: str
     estimated_hours: float | None
     actual_hours: float | None
+    start_date: date | None
+    due_date: date | None
 
     @classmethod
     def from_model(cls, task) -> "TaskType":
@@ -88,6 +90,8 @@ class TaskType:
             priority=task.priority,
             estimated_hours=float(task.estimated_hours) if task.estimated_hours is not None else None,
             actual_hours=float(task.actual_hours) if task.actual_hours is not None else None,
+            start_date=task.start_date,
+            due_date=task.due_date,
         )
 
     @strawberry.field
@@ -182,6 +186,8 @@ class PhaseType:
     name: str
     order_index: int
     status: str
+    start_date: date | None
+    due_date: date | None
 
     @classmethod
     def from_model(cls, phase) -> "PhaseType":
@@ -191,6 +197,8 @@ class PhaseType:
             name=phase.name,
             order_index=phase.order_index,
             status=phase.status,
+            start_date=phase.start_date,
+            due_date=phase.due_date,
         )
 
     @strawberry.field
@@ -261,6 +269,8 @@ class PlanningMutation:
         name: str,
         order_index: int,
         status: str = "not_started",
+        start_date: date | None = None,
+        due_date: date | None = None,
     ) -> PhaseType:
         ctx = require_role(info.context, "admin", "project_manager")
         try:
@@ -271,6 +281,8 @@ class PlanningMutation:
                 name=name,
                 order_index=order_index,
                 status=status,
+                start_date=start_date,
+                due_date=due_date,
             )
             return PhaseType.from_model(row)
         except Exception as exc:
@@ -284,6 +296,8 @@ class PlanningMutation:
         name: str | None = None,
         order_index: int | None = None,
         status: str | None = None,
+        start_date: date | None = None,
+        due_date: date | None = None,
     ) -> PhaseType:
         ctx = require_role(info.context, "admin", "project_manager")
         try:
@@ -291,7 +305,13 @@ class PlanningMutation:
                 ctx.db,
                 actor=ctx.user,
                 phase_id=UUID(str(id)),
-                updates={"name": name, "order_index": order_index, "status": status},
+                updates={
+                    "name": name,
+                    "order_index": order_index,
+                    "status": status,
+                    "start_date": start_date,
+                    "due_date": due_date,
+                },
             )
             return PhaseType.from_model(row)
         except Exception as exc:
@@ -328,6 +348,8 @@ class PlanningMutation:
         title: str,
         order_index: int,
         status: str = "not_started",
+        description: str | None = None,
+        due_date: date | None = None,
         requires_client_approval: bool = False,
     ) -> MilestoneType:
         ctx = require_role(info.context, "admin", "project_manager")
@@ -339,6 +361,8 @@ class PlanningMutation:
                 title=title,
                 order_index=order_index,
                 status=status,
+                description=description,
+                due_date=due_date,
                 requires_client_approval=requires_client_approval,
             )
             return MilestoneType.from_model(row)
@@ -353,6 +377,9 @@ class PlanningMutation:
         title: str | None = None,
         order_index: int | None = None,
         status: str | None = None,
+        description: str | None = None,
+        due_date: date | None = None,
+        requires_client_approval: bool | None = None,
     ) -> MilestoneType:
         ctx = require_role(info.context, "admin", "project_manager")
         try:
@@ -360,7 +387,14 @@ class PlanningMutation:
                 ctx.db,
                 actor=ctx.user,
                 milestone_id=UUID(str(id)),
-                updates={"title": title, "order_index": order_index, "status": status},
+                updates={
+                    "title": title,
+                    "order_index": order_index,
+                    "status": status,
+                    "description": description,
+                    "due_date": due_date,
+                    "requires_client_approval": requires_client_approval,
+                },
             )
             return MilestoneType.from_model(row)
         except Exception as exc:
@@ -403,9 +437,12 @@ class PlanningMutation:
         title: str,
         milestone_id: strawberry.ID | None = None,
         parent_task_id: strawberry.ID | None = None,
+        description: str | None = None,
         assignee_id: strawberry.ID | None = None,
         status: str = "todo",
         priority: str = "medium",
+        start_date: date | None = None,
+        due_date: date | None = None,
         estimated_hours: float | None = None,
     ) -> TaskType:
         ctx = require_role(info.context, "admin", "project_manager")
@@ -418,9 +455,12 @@ class PlanningMutation:
                 title=title,
                 milestone_id=UUID(str(milestone_id)) if milestone_id else None,
                 parent_task_id=UUID(str(parent_task_id)) if parent_task_id else None,
+                description=description,
                 assignee_id=UUID(str(assignee_id)) if assignee_id else None,
                 status=status,
                 priority=priority,
+                start_date=start_date,
+                due_date=due_date,
                 estimated_hours=estimated_hours,
             )
             return TaskType.from_model(row)
@@ -433,9 +473,15 @@ class PlanningMutation:
         info: Info,
         id: strawberry.ID,
         title: str | None = None,
+        description: str | None = None,
         status: str | None = None,
         priority: str | None = None,
+        phase_id: strawberry.ID | None = None,
+        milestone_id: strawberry.ID | None = None,
+        parent_task_id: strawberry.ID | None = None,
         assignee_id: strawberry.ID | None = None,
+        start_date: date | None = None,
+        due_date: date | None = None,
         estimated_hours: float | None = None,
         actual_hours: float | None = None,
     ) -> TaskType:
@@ -447,9 +493,15 @@ class PlanningMutation:
                 task_id=UUID(str(id)),
                 updates={
                     "title": title,
+                    "description": description,
                     "status": status,
                     "priority": priority,
+                    "phase_id": UUID(str(phase_id)) if phase_id else None,
+                    "milestone_id": UUID(str(milestone_id)) if milestone_id else None,
+                    "parent_task_id": UUID(str(parent_task_id)) if parent_task_id else None,
                     "assignee_id": UUID(str(assignee_id)) if assignee_id else None,
+                    "start_date": start_date,
+                    "due_date": due_date,
                     "estimated_hours": estimated_hours,
                     "actual_hours": actual_hours,
                 },

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
 
     enable_scheduler: bool = False
+    # TOTP 2FA — off by default; set ENABLE_2FA=true when the UI and login challenge are ready.
+    enable_2fa: bool = False
     # Mail is disabled by default — set EMAIL_FEATURES_ENABLED=true to turn SMTP jobs back on.
     email_features_enabled: bool = False
     smtp_host: str | None = None
