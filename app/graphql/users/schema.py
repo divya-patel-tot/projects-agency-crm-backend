@@ -23,6 +23,7 @@ class UserSummaryType:
     name: str
     email: str
     role: str
+    job_title: str | None = None
     avatar_url: str | None = None
     status: str | None = None
 
@@ -33,6 +34,7 @@ class UserSummaryType:
             name=user.name,
             email=user.email,
             role=user.role,
+            job_title=user.job_title,
             avatar_url=user.avatar_url,
             status=user.status,
         )

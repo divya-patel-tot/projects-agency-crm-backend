@@ -24,6 +24,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[str] = mapped_column(String(64), nullable=False, default=UserRole.TEAM_MEMBER.value)
+    job_title: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=UserStatus.ACTIVE.value)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
