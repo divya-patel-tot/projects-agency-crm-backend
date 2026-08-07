@@ -65,6 +65,7 @@ class TaskType:
     phase_id: strawberry.ID
     milestone_id: strawberry.ID | None
     parent_task_id: strawberry.ID | None
+    change_request_id: strawberry.ID | None
     title: str
     description: str | None
     assignee_id: strawberry.ID | None
@@ -83,6 +84,7 @@ class TaskType:
             phase_id=strawberry.ID(str(task.phase_id)),
             milestone_id=strawberry.ID(str(task.milestone_id)) if task.milestone_id else None,
             parent_task_id=strawberry.ID(str(task.parent_task_id)) if task.parent_task_id else None,
+            change_request_id=strawberry.ID(str(task.change_request_id)) if task.change_request_id else None,
             title=task.title,
             description=task.description,
             assignee_id=strawberry.ID(str(task.assignee_id)) if task.assignee_id else None,
@@ -437,6 +439,7 @@ class PlanningMutation:
         title: str,
         milestone_id: strawberry.ID | None = None,
         parent_task_id: strawberry.ID | None = None,
+        change_request_id: strawberry.ID | None = None,
         description: str | None = None,
         assignee_id: strawberry.ID | None = None,
         status: str = "todo",
@@ -455,6 +458,7 @@ class PlanningMutation:
                 title=title,
                 milestone_id=UUID(str(milestone_id)) if milestone_id else None,
                 parent_task_id=UUID(str(parent_task_id)) if parent_task_id else None,
+                change_request_id=UUID(str(change_request_id)) if change_request_id else None,
                 description=description,
                 assignee_id=UUID(str(assignee_id)) if assignee_id else None,
                 status=status,

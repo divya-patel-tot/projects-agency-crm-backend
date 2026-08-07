@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_activity_log
 from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.enums import UserRole
+from app.db.models.change_request import ChangeRequest
 from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
 from app.db.models.user import User
@@ -248,6 +249,7 @@ async def create_task_record(
     title: str,
     milestone_id: UUID | None = None,
     parent_task_id: UUID | None = None,
+    change_request_id: UUID | None = None,
     description: str | None = None,
     assignee_id: UUID | None = None,
     status: str = "todo",
@@ -257,12 +259,20 @@ async def create_task_record(
     estimated_hours: float | None = None,
     actual_hours: float | None = None,
 ) -> Task:
+    if change_request_id is not None:
+        cr = await db.get(ChangeRequest, change_request_id)
+        if cr is None or cr.project_id != project_id:
+            raise DomainError(
+                "That change request isn't on this project.", code="bad_user_input"
+            )
+
     task = Task(
         org_id=actor.org_id,
         project_id=project_id,
         phase_id=phase_id,
         milestone_id=milestone_id,
         parent_task_id=parent_task_id,
+        change_request_id=change_request_id,
         title=title,
         description=description,
         assignee_id=assignee_id,

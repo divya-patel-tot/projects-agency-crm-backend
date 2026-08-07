@@ -23,6 +23,8 @@ from app.graphql.change_requests.service import (
 )
 from app.graphql.change_requests.ai_assist import draft_impact_assessment as draft_impact_assessment_ai
 from app.graphql.change_requests.repository import list_approvals_for_cr
+from app.graphql.loaders import get_tasks_by_change_request_loader
+from app.graphql.planning.schema import TaskType
 from app.graphql.portal.repository import get_project_for_company
 from app.graphql.projects.service import actor_can_access_project
 
@@ -116,6 +118,12 @@ class ChangeRequestType:
     async def approvals(self, info: Info) -> list[ChangeRequestApprovalType]:
         rows = await list_approvals_for_cr(info.context.db, UUID(str(self.id)))
         return [ChangeRequestApprovalType.from_model(row) for row in rows]
+
+    @strawberry.field(description="Tasks created from this change request, if any.")
+    async def tasks(self, info: Info) -> list[TaskType]:
+        loader = get_tasks_by_change_request_loader(info.context)
+        rows = await loader.load(UUID(str(self.id)))
+        return [TaskType.from_model(row) for row in rows]
 
     @strawberry.field
     async def response_due_at(self, info: Info) -> datetime | None:

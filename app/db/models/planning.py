@@ -44,12 +44,20 @@ class Milestone(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, SoftD
 
 class Task(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "tasks"
-    __table_args__ = (Index("ix_tasks_project_status", "project_id", "status"),)
+    __table_args__ = (
+        Index("ix_tasks_project_status", "project_id", "status"),
+        Index("ix_tasks_change_request_id", "change_request_id"),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False)
     phase_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("project_phases.id"), nullable=False)
     milestone_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("milestones.id"), nullable=True)
     parent_task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=True)
+    # Set when this task was spun up from an approved change request, so the
+    # work stays traceable back to what the client actually asked for.
+    change_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("change_requests.id"), nullable=True
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

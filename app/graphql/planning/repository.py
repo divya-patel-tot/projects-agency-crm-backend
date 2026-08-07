@@ -99,6 +99,15 @@ async def get_subtasks_by_parent_ids(db: AsyncSession, parent_ids: list[UUID]) -
     return list(result.scalars().all())
 
 
+async def get_tasks_by_change_request_ids(db: AsyncSession, change_request_ids: list[UUID]) -> list[Task]:
+    if not change_request_ids:
+        return []
+    result = await db.execute(
+        select(Task).where(Task.change_request_id.in_(change_request_ids), Task.deleted_at.is_(None))
+    )
+    return list(result.scalars().all())
+
+
 async def get_task(db: AsyncSession, task_id: UUID) -> Task | None:
     result = await db.execute(select(Task).where(Task.id == task_id, Task.deleted_at.is_(None)))
     return result.scalar_one_or_none()

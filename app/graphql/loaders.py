@@ -13,6 +13,7 @@ from app.graphql.planning.repository import (
     get_milestones_by_phase_ids,
     get_phases_by_project_ids,
     get_subtasks_by_parent_ids,
+    get_tasks_by_change_request_ids,
     get_tasks_by_milestone_ids,
     get_tasks_by_phase_ids,
     get_tasks_by_project_ids,
@@ -137,6 +138,16 @@ def get_tasks_by_milestone_loader(context) -> DataLoader:
         return _group_by(tasks, lambda t: t.milestone_id, milestone_ids)
 
     return _make_loader(context, "_tasks_by_milestone_loader", load_fn)
+
+
+def get_tasks_by_change_request_loader(context) -> DataLoader:
+    async def load_fn(change_request_ids: list[UUID]) -> list[list]:
+        if context.db is None:
+            return [[] for _ in change_request_ids]
+        tasks = await get_tasks_by_change_request_ids(context.db, change_request_ids)
+        return _group_by(tasks, lambda t: t.change_request_id, change_request_ids)
+
+    return _make_loader(context, "_tasks_by_change_request_loader", load_fn)
 
 
 def get_subtasks_by_parent_loader(context) -> DataLoader:
