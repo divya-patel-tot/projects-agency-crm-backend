@@ -314,6 +314,7 @@ class ChangeRequestMutation:
         description: str | None = None,
         priority: str = "medium",
         desired_due_date: date | None = None,
+        requested_by_contact_id: strawberry.ID | None = None,
     ) -> ChangeRequestType:
         if info.context.actor_type == ActorType.PORTAL:
             ctx = require_portal(info.context)
@@ -369,6 +370,7 @@ class ChangeRequestMutation:
                 cr_type=type,
                 priority=priority,
                 desired_due_date=desired_due_date,
+                requested_by_contact_id=UUID(str(requested_by_contact_id)) if requested_by_contact_id else None,
                 actor_id=ctx.user.id,
             )
             return ChangeRequestType.from_model(row)
