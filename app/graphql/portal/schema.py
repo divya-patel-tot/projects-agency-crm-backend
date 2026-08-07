@@ -99,6 +99,9 @@ class PortalProjectType:
     health: str | None
     start_date: date | None
     end_date: date | None
+    # Not a financial figure itself — just the unit the cost-impact numbers
+    # already shown on this project's change requests are denominated in.
+    currency: str
 
     @classmethod
     def from_model(cls, project) -> "PortalProjectType":
@@ -111,6 +114,7 @@ class PortalProjectType:
             health=project.health,
             start_date=project.start_date,
             end_date=project.end_date,
+            currency=project.currency,
         )
 
     @strawberry.field

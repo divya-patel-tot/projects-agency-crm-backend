@@ -7,7 +7,15 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
-    pass
+    # Postgres supports RETURNING, so make the ORM fetch server-generated
+    # columns (like TimestampMixin.updated_at's onupdate=func.now()) as part
+    # of the same INSERT/UPDATE statement rather than marking them expired.
+    # Without this, reading such a column right after a flush — outside of a
+    # further awaited DB call — throws sqlalchemy.exc.MissingGreenlet, since
+    # the lazy re-fetch needed to un-expire it can't run outside the async
+    # greenlet context an ORM attribute access isn't itself wrapped in.
+    __abstract__ = True
+    __mapper_args__ = {"eager_defaults": True}
 
 
 class UUIDPrimaryKeyMixin:
