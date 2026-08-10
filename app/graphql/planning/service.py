@@ -301,6 +301,15 @@ async def create_task_record(
 TEAM_MEMBER_EDITABLE_TASK_FIELDS = {"status"}
 
 
+def _normalize_task_updates(updates: dict) -> dict:
+    normalized = dict(updates)
+    if normalized.get("status") is not None:
+        normalized["status"] = str(normalized["status"]).lower()
+    if normalized.get("priority") is not None:
+        normalized["priority"] = str(normalized["priority"]).lower()
+    return normalized
+
+
 async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, updates: dict) -> Task:
     task = await get_task(db, task_id)
     if task is None:
@@ -319,7 +328,8 @@ async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, up
             raise AuthorizationError("You can only update the status of your own tasks.")
     before = _task_dict(task)
     prev_assignee_id = task.assignee_id
-    for key, value in updates.items():
+    normalized = _normalize_task_updates(updates)
+    for key, value in normalized.items():
         if value is not None and hasattr(task, key):
             setattr(task, key, value)
     await db.flush()
