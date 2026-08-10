@@ -92,6 +92,15 @@ async def get_org_settings(db: AsyncSession, org_id: UUID) -> dict:
     return org.settings if org and org.settings else {}
 
 
+async def list_attachments_for_cr(db: AsyncSession, cr_id: UUID) -> list[ChangeRequestAttachment]:
+    result = await db.execute(
+        select(ChangeRequestAttachment)
+        .where(ChangeRequestAttachment.change_request_id == cr_id)
+        .order_by(ChangeRequestAttachment.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def list_approvals_for_cr(db: AsyncSession, cr_id: UUID) -> list[Approval]:
     result = await db.execute(
         select(Approval)

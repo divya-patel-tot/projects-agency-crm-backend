@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime
 from uuid import UUID
 
@@ -23,6 +25,7 @@ from app.graphql.change_requests.service import (
 )
 from app.graphql.change_requests.ai_assist import draft_impact_assessment as draft_impact_assessment_ai
 from app.graphql.change_requests.repository import list_approvals_for_cr
+from app.graphql.documents.schema import DocumentType
 from app.graphql.loaders import get_tasks_by_change_request_loader
 from app.graphql.planning.schema import TaskType
 from app.graphql.portal.repository import get_project_for_company
@@ -138,6 +141,33 @@ class ChangeRequestType:
             info.context.db, org_id=self._org_id, status=self.status, submitted_at=self.submitted_at
         )
         return overdue
+
+    @strawberry.field(description="Files attached to this change request.")
+    async def attachments(self, info: Info) -> list[DocumentType]:
+        from app.documents.categorization import classify_document, extract_filename_from_path
+        from app.graphql.change_requests.repository import list_attachments_for_cr
+        from app.graphql.documents.repository import list_documents_for_entity
+
+        cr_id = UUID(str(self.id))
+        document_rows = await list_documents_for_entity(
+            info.context.db,
+            entity_type="change_request",
+            entity_id=cr_id,
+        )
+        if document_rows:
+            return [DocumentType.from_model(row) for row in document_rows]
+
+        attachment_rows = await list_attachments_for_cr(info.context.db, cr_id)
+        results: list[DocumentType] = []
+        for attachment in attachment_rows:
+            filename = extract_filename_from_path(attachment.file_url)
+            classification = classify_document(
+                filename=filename,
+                content_type=None,
+                size_bytes=0,
+            )
+            results.append(DocumentType.from_attachment(attachment, filename, classification))
+        return results
 
 
 @strawberry.type

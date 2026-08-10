@@ -53,6 +53,7 @@ class Settings(BaseSettings):
 
     assets_root_path: str = r"\\192.168.0.10\Shared\agency-crm-assets"
     assets_upload_token_expire_minutes: int = Field(default=15, ge=5, le=60)
+    assets_max_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1024 * 1024)
 
     postgres_user: str | None = None
     postgres_password: str | None = None

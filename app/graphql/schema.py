@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import strawberry
 from strawberry.extensions import QueryDepthLimiter
 from strawberry.tools import merge_types

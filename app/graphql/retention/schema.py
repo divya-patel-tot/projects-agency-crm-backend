@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from uuid import UUID
 
@@ -165,7 +167,7 @@ class RetentionSequenceType:
         return [SequenceStepType.from_model(r) for r in rows]
 
     @strawberry.field
-    async def enrollments(self, info: Info) -> list["RetentionEnrollmentType"]:
+    async def enrollments(self, info: Info) -> list[RetentionEnrollmentType]:
         from app.graphql.retention.repository import list_enrollments_for_sequence
 
         ctx = require_authenticated(info.context)
@@ -211,7 +213,7 @@ class RetentionEnrollmentType:
         )
 
     @strawberry.field
-    async def sequence(self, info: Info) -> "RetentionSequenceType | None":
+    async def sequence(self, info: Info) -> RetentionSequenceType | None:
         from app.graphql.retention.repository import get_sequence
 
         ctx = require_authenticated(info.context)

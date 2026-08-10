@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime
 from uuid import UUID
 
@@ -108,7 +110,7 @@ class TaskType:
         return UserSummaryType.from_model(user)
 
     @strawberry.field
-    async def subtasks(self, info: Info) -> list["TaskType"]:
+    async def subtasks(self, info: Info) -> list[TaskType]:
         loader = get_subtasks_by_parent_loader(info.context)
         rows = await loader.load(UUID(str(self.id)))
         return [TaskType.from_model(row) for row in rows]
@@ -118,6 +120,27 @@ class TaskType:
         loader = get_dependencies_by_task_loader(info.context)
         rows = await loader.load(UUID(str(self.id)))
         return [TaskDependencyType.from_model(row) for row in rows]
+
+
+@strawberry.type
+class MilestoneApprovalType:
+    id: strawberry.ID
+    approver_type: str
+    status: str
+    comment: str | None
+    decided_at: datetime | None
+    approver_name: str | None
+
+    @classmethod
+    def from_model(cls, approval) -> MilestoneApprovalType:
+        return cls(
+            id=strawberry.ID(str(approval.id)),
+            approver_type=approval.approver_type.upper(),
+            status=approval.status.upper(),
+            comment=approval.comment,
+            decided_at=approval.decided_at,
+            approver_name="Client contact" if approval.approver_type == "client" else "Delivery team",
+        )
 
 
 @strawberry.type
@@ -153,32 +176,11 @@ class MilestoneType:
         return [TaskType.from_model(row) for row in rows]
 
     @strawberry.field
-    async def approvals(self, info: Info) -> list["MilestoneApprovalType"]:
+    async def approvals(self, info: Info) -> list[MilestoneApprovalType]:
         from app.graphql.approvals.repository import list_approvals_for_milestone
 
         rows = await list_approvals_for_milestone(info.context.db, UUID(str(self.id)))
         return [MilestoneApprovalType.from_model(row) for row in rows]
-
-
-@strawberry.type
-class MilestoneApprovalType:
-    id: strawberry.ID
-    approver_type: str
-    status: str
-    comment: str | None
-    decided_at: datetime | None
-    approver_name: str | None
-
-    @classmethod
-    def from_model(cls, approval) -> "MilestoneApprovalType":
-        return cls(
-            id=strawberry.ID(str(approval.id)),
-            approver_type=approval.approver_type.upper(),
-            status=approval.status.upper(),
-            comment=approval.comment,
-            decided_at=approval.decided_at,
-            approver_name="Client contact" if approval.approver_type == "client" else "Delivery team",
-        )
 
 
 @strawberry.type

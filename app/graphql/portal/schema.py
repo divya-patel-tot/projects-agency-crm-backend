@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime
 import logging
 from uuid import UUID
@@ -18,10 +20,12 @@ from app.graphql.approvals.service import (
 from app.graphql.documents.service import (
     confirm_upload,
     delete_document_record,
+    get_document_by_id,
     get_entity_documents,
     get_portal_documents,
     request_upload_url,
 )
+from app.graphql.documents.schema import DocumentType
 from app.graphql.loaders import get_phases_by_project_loader, get_tasks_by_project_loader
 from app.graphql.planning.repository import list_milestones_for_phase, list_phases_for_project
 from app.graphql.planning.schema import MilestoneType, PhaseType, TaskType
@@ -57,27 +61,6 @@ class PortalCompanyType:
             industry=company.industry,
             website=company.website,
             status=company.status,
-        )
-
-
-@strawberry.type
-class DocumentType:
-    id: strawberry.ID
-    entity_type: str
-    entity_id: strawberry.ID
-    file_url: str
-    version: int
-    uploaded_by: strawberry.ID
-
-    @classmethod
-    def from_model(cls, document) -> "DocumentType":
-        return cls(
-            id=strawberry.ID(str(document.id)),
-            entity_type=document.entity_type,
-            entity_id=strawberry.ID(str(document.entity_id)),
-            file_url=document.file_url,
-            version=document.version,
-            uploaded_by=strawberry.ID(str(document.uploaded_by)),
         )
 
 
@@ -435,6 +418,15 @@ class DocumentQuery:
                 )
                 if project is None:
                     return []
+            elif entity_type == "milestone":
+                from app.graphql.documents.repository import milestone_belongs_to_company
+
+                if not await milestone_belongs_to_company(
+                    ctx.db,
+                    milestone_id=UUID(str(entity_id)),
+                    company_id=ctx.company_id,
+                ):
+                    return []
             rows = await get_entity_documents(
                 ctx.db,
                 entity_type=entity_type,
@@ -448,6 +440,26 @@ class DocumentQuery:
                 entity_id=UUID(str(entity_id)),
             )
         return [DocumentType.from_model(row) for row in rows]
+
+    @strawberry.field
+    async def document(self, info: Info, id: strawberry.ID) -> DocumentType | None:
+        if info.context.actor_type == ActorType.PORTAL:
+            ctx = require_portal(info.context)
+            try:
+                row = await get_document_by_id(
+                    ctx.db,
+                    document_id=UUID(str(id)),
+                    company_id=ctx.company_id,
+                )
+            except NotFoundError:
+                return None
+        else:
+            ctx = require_authenticated(info.context)
+            try:
+                row = await get_document_by_id(ctx.db, document_id=UUID(str(id)))
+            except NotFoundError:
+                return None
+        return DocumentType.from_model(row)
 
     @strawberry.field
     async def company_documents(

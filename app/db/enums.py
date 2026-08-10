@@ -197,3 +197,27 @@ class InvoiceStatus(StrEnum):
     PAID = "paid"
     OVERDUE = "overdue"
     CANCELLED = "cancelled"
+
+
+class DocumentCategory(StrEnum):
+    MARKDOWN = "markdown"
+    MERMAID = "mermaid"
+    SVG = "svg"
+    IMAGE = "image"
+    PDF = "pdf"
+    VIDEO = "video"
+    AUDIO = "audio"
+    CODE = "code"
+    OFFICE = "office"
+    HTML = "html"
+    CSV = "csv"
+    ARCHIVE = "archive"
+    TEXT = "text"
+    OTHER = "other"
+
+
+class PreviewStatus(StrEnum):
+    PENDING = "pending"
+    READY = "ready"
+    UNSUPPORTED = "unsupported"
+    FAILED = "failed"

@@ -146,16 +146,20 @@ def create_upload_token(
     org_id: UUID,
     relative_path: str,
     content_type: str,
+    filename: str | None = None,
     settings: Settings | None = None,
 ) -> str:
     settings = settings or get_settings()
+    payload: dict[str, Any] = {
+        "org_id": str(org_id),
+        "relative_path": relative_path,
+        "content_type": content_type,
+        "token_type": TokenType.UPLOAD.value,
+    }
+    if filename:
+        payload["filename"] = filename
     return _encode_token(
-        {
-            "org_id": str(org_id),
-            "relative_path": relative_path,
-            "content_type": content_type,
-            "token_type": TokenType.UPLOAD.value,
-        },
+        payload,
         expires_delta=timedelta(minutes=settings.assets_upload_token_expire_minutes),
         settings=settings,
     )

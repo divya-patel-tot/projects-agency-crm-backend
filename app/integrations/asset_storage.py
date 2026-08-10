@@ -21,6 +21,22 @@ def build_relative_path(*, org_id: str, entity_type: str, entity_id: str, filena
     )
 
 
+def build_thumbnail_path(*, org_id: str, entity_type: str, entity_id: str, source_path: str) -> str:
+    source_name = PurePosixPath(source_path.replace("\\", "/")).name
+    stem = source_name.split("_", 1)[0] if "_" in source_name else source_name
+    return str(
+        PurePosixPath(org_id) / entity_type / entity_id / "thumbs" / f"{stem}_thumb.webp",
+    )
+
+
+def build_preview_path(*, org_id: str, entity_type: str, entity_id: str, source_path: str) -> str:
+    source_name = PurePosixPath(source_path.replace("\\", "/")).name
+    stem = source_name.split("_", 1)[0] if "_" in source_name else source_name
+    return str(
+        PurePosixPath(org_id) / entity_type / entity_id / "previews" / f"{stem}_preview.pdf",
+    )
+
+
 def validate_relative_path(relative_path: str) -> str:
     normalized = PurePosixPath(relative_path.replace("\\", "/"))
     if normalized.is_absolute() or ".." in normalized.parts:
@@ -48,7 +64,33 @@ def file_exists(relative_path: str, settings: Settings | None = None) -> bool:
     return target.is_file()
 
 
+def file_stat(relative_path: str, settings: Settings | None = None) -> tuple[int, float]:
+    target = absolute_path(relative_path, settings)
+    stat = target.stat()
+    return stat.st_size, stat.st_mtime
+
+
+def read_file(relative_path: str, settings: Settings | None = None) -> bytes:
+    target = absolute_path(relative_path, settings)
+    if not target.is_file():
+        raise DomainError("File not found", code="not_found")
+    return target.read_bytes()
+
+
 def write_file(relative_path: str, content: bytes, settings: Settings | None = None) -> Path:
     target = ensure_parent_directory(relative_path, settings)
     target.write_bytes(content)
     return target
+
+
+def delete_file(relative_path: str, settings: Settings | None = None) -> None:
+    target = absolute_path(relative_path, settings)
+    if target.is_file():
+        target.unlink()
+
+
+def display_filename(relative_path: str) -> str:
+    name = PurePosixPath(relative_path.replace("\\", "/")).name
+    if "_" in name:
+        return name.split("_", 1)[1]
+    return name

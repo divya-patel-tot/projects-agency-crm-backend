@@ -15,7 +15,7 @@ from app.graphql.profile.service import (
     update_notification_preferences,
     update_portal_profile,
 )
-from app.graphql.viewer.schema import ViewerType, _organization_viewer
+from app.graphql.viewer.schema import CompanyViewerType, ContactViewerType, ViewerType, _organization_viewer
 
 
 def _gql_error(exc: Exception) -> None:
@@ -136,7 +136,6 @@ class ProfileMutation:
                     title=title,
                 )
                 display_name = f"{ctx.contact.first_name} {ctx.contact.last_name}".strip()
-                from app.graphql.viewer.schema import CompanyViewerType, ContactViewerType
                 from app.db.models.company import Company
 
                 company = await ctx.db.get(Company, ctx.company_id)
