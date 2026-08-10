@@ -118,18 +118,6 @@ async def create_contact_record(
         entity_id=contact.id,
         diff={"after": _contact_to_dict(contact)},
     )
-    if is_primary:
-        from app.db.enums import SequenceTriggerType
-        from app.graphql.retention.service import try_auto_enroll
-
-        await try_auto_enroll(
-            db,
-            org_id=actor.org_id,
-            trigger_type=SequenceTriggerType.ON_COMPANY_CREATED.value,
-            company_id=company_id,
-            contact_id=contact.id,
-            actor_id=actor.id,
-        )
     return contact
 
 

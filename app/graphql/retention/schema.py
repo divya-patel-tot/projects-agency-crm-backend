@@ -11,8 +11,9 @@ from app.core.exceptions import DomainError, NotFoundError
 from app.db.enums import EnrollmentStatus
 from app.db.models.retention import RetentionEnrollment
 from app.graphql.companies.schema import CompanyType, company_from_model
-from app.graphql.companies.service import get_company_by_id
+from app.graphql.companies.service import get_companies, get_company_by_id
 from app.graphql.contacts.schema import ContactType
+from app.graphql.retention.eligibility import get_company_retention_eligibility
 from app.graphql.retention.service import (
     add_sequence_step as add_sequence_step_service,
     approve_retention_sequence,
@@ -278,6 +279,39 @@ class TouchpointType:
 
 
 @strawberry.type
+class RetentionBlockingProjectType:
+    id: strawberry.ID
+    name: str
+    status: str
+
+
+@strawberry.type
+class CompanyRetentionEligibilityType:
+    eligible: bool
+    reason: str | None
+    completed_project_count: int
+    incomplete_project_count: int
+    blocking_projects: list[RetentionBlockingProjectType]
+
+    @classmethod
+    def from_result(cls, result) -> "CompanyRetentionEligibilityType":
+        return cls(
+            eligible=result.eligible,
+            reason=result.reason,
+            completed_project_count=result.completed_project_count,
+            incomplete_project_count=result.incomplete_project_count,
+            blocking_projects=[
+                RetentionBlockingProjectType(
+                    id=strawberry.ID(str(project_id)),
+                    name=name,
+                    status=status,
+                )
+                for project_id, name, status in result.blocking_projects
+            ],
+        )
+
+
+@strawberry.type
 class RetentionQuery:
     @strawberry.field
     async def retention_sequences(
@@ -331,6 +365,28 @@ class RetentionQuery:
             return []
         rows = await get_touchpoints_for_company(ctx.db, UUID(str(company_id)))
         return [TouchpointType.from_model(r) for r in rows]
+
+    @strawberry.field
+    async def company_retention_eligibility(
+        self,
+        info: Info,
+        company_id: strawberry.ID,
+    ) -> CompanyRetentionEligibilityType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        await get_company_by_id(ctx.db, UUID(str(company_id)), actor=ctx.user)
+        result = await get_company_retention_eligibility(ctx.db, UUID(str(company_id)))
+        return CompanyRetentionEligibilityType.from_result(result)
+
+    @strawberry.field
+    async def retention_eligible_companies(self, info: Info) -> list[CompanyType]:
+        ctx = require_role(info.context, "admin", "project_manager")
+        companies = await get_companies(ctx.db, actor=ctx.user)
+        eligible: list[CompanyType] = []
+        for company in companies:
+            result = await get_company_retention_eligibility(ctx.db, company.id)
+            if result.eligible:
+                eligible.append(company_from_model(company))
+        return eligible
 
 
 @strawberry.type

@@ -28,6 +28,7 @@ from app.graphql.planning.schema import MilestoneType, PhaseType, TaskType
 from app.graphql.change_requests.schema import ChangeRequestType
 from app.graphql.change_requests.service import get_change_request, get_change_requests
 from app.graphql.portal.repository import get_company_by_id, get_project_for_company, get_projects_for_company
+from app.graphql.projects.completion import compute_project_completion_percent
 from app.graphql.change_requests.repository import list_change_requests_for_company
 
 
@@ -140,12 +141,14 @@ class PortalProjectType:
 
     @strawberry.field
     async def completion_percent(self, info: Info) -> int:
+        from app.db.models.project import Project
+
+        project = await info.context.db.get(Project, UUID(str(self.id)))
+        if project is None:
+            return 0
         loader = get_tasks_by_project_loader(info.context)
         tasks = await loader.load(UUID(str(self.id)))
-        if not tasks:
-            return 0
-        done = sum(1 for task in tasks if task.status == "done")
-        return round(done / len(tasks) * 100)
+        return compute_project_completion_percent(project=project, tasks=tasks)
 
     @strawberry.field
     async def project_manager(self, info: Info) -> PortalManagerType | None:

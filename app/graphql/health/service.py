@@ -26,6 +26,7 @@ from app.graphql.health.repository import (
     list_health_history,
 )
 from app.graphql.org_settings import HealthOrgSettings, health_settings_from_dict
+from app.graphql.retention.eligibility import get_company_retention_eligibility
 from app.integrations.groq_client import generate_text
 
 OPEN_CR_STATUSES = [
@@ -269,7 +270,13 @@ async def get_at_risk_companies(
 ) -> list[Company]:
     settings = org_settings or HealthOrgSettings()
     effective_threshold = threshold if threshold is not None else settings.at_risk_threshold
-    return await list_at_risk_companies(db, threshold=effective_threshold)
+    rows = await list_at_risk_companies(db, threshold=effective_threshold)
+    eligible: list[Company] = []
+    for company in rows:
+        eligibility = await get_company_retention_eligibility(db, company.id)
+        if eligibility.eligible:
+            eligible.append(company)
+    return eligible
 
 
 async def get_company_health_history(db: AsyncSession, *, company_id: UUID, limit: int = 30) -> list[ClientHealthScore]:

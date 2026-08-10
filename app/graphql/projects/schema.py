@@ -18,6 +18,7 @@ from app.graphql.loaders import (
     get_tasks_by_project_loader,
 )
 from app.graphql.planning.schema import PhaseType, TaskType
+from app.graphql.projects.completion import compute_project_completion_percent
 from app.graphql.projects.service import (
     add_project_contact_record,
     add_project_member_record,
@@ -126,6 +127,19 @@ class ProjectType:
         loader = get_tags_by_project_loader(info.context)
         rows = await loader.load(UUID(str(self.id)))
         return [TagType(id=strawberry.ID(str(row.id)), name=row.name) for row in rows]
+
+    @strawberry.field
+    async def completion_percent(self, info: Info) -> int:
+        from app.db.models.project import Project
+
+        if info.context.db is None:
+            return 0
+        project = await info.context.db.get(Project, UUID(str(self.id)))
+        if project is None:
+            return 0
+        loader = get_tasks_by_project_loader(info.context)
+        tasks = await loader.load(UUID(str(self.id)))
+        return compute_project_completion_percent(project=project, tasks=tasks)
 
 
 @strawberry.type

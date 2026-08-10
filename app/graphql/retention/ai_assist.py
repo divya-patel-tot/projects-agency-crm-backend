@@ -11,12 +11,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError, NotFoundError
-from app.db.enums import EnrollmentStatus
+from app.db.enums import EnrollmentStatus, SequenceTriggerType
 from app.db.models.company import Company
 from app.db.models.contact import Contact
 from app.db.models.project import Project
 from app.db.models.retention import RetentionEnrollment, RetentionSequence, Touchpoint
 from app.db.models.user import User
+from app.graphql.retention.eligibility import (
+    RETENTION_CHANNELS,
+    assert_company_retention_eligible,
+)
 from app.integrations.groq_client import generate_text
 
 
@@ -55,7 +59,7 @@ def _extract_json_block(text: str) -> dict | None:
 
 def _parse_step(raw: dict, index: int) -> GeneratedSequenceStep:
     channel = str(raw.get("channel") or "call").lower().replace("-", "_")
-    if channel not in {"email", "call", "meeting", "internal_task"}:
+    if channel not in RETENTION_CHANNELS:
         channel = "call"
     offset = raw.get("offset_days", index * 7)
     try:
@@ -78,9 +82,11 @@ def _parse_draft(payload: dict) -> GeneratedSequenceDraft:
     if not isinstance(steps_raw, list) or not steps_raw:
         raise DomainError("AI response did not include sequence steps", code="validation_error")
     steps = [_parse_step(step, index) for index, step in enumerate(steps_raw)]
-    trigger = str(payload.get("trigger_type") or "manual").lower().replace("-", "_")
+    trigger = str(payload.get("trigger_type") or SequenceTriggerType.ON_PROJECT_COMPLETED.value).lower().replace("-", "_")
+    if trigger not in {SequenceTriggerType.MANUAL.value, SequenceTriggerType.ON_PROJECT_COMPLETED.value}:
+        trigger = SequenceTriggerType.ON_PROJECT_COMPLETED.value
     return GeneratedSequenceDraft(
-        name=str(payload.get("name") or "AI retention sequence").strip()[:255],
+        name=str(payload.get("name") or "Post-project retention sequence").strip()[:255],
         description=str(payload.get("description")).strip() if payload.get("description") else None,
         trigger_type=trigger,
         strategy_summary=str(payload.get("strategy_summary")).strip() if payload.get("strategy_summary") else None,
@@ -131,8 +137,8 @@ async def _gather_company_context(db: AsyncSession, *, company_id: UUID, org_id:
         f"Industry: {company.industry or 'unknown'}",
         f"Status: {company.status}",
         f"Health score: {float(company.health_score) if company.health_score is not None else 'unknown'}",
-        f"Size: {company.size or 'unknown'}",
-        f"Timezone: {company.timezone or 'unknown'}",
+        "",
+        "Context: All delivery projects are complete. Design post-project retention follow-ups only.",
         "",
         "Contacts:",
     ]
@@ -146,14 +152,15 @@ async def _gather_company_context(db: AsyncSession, *, company_id: UUID, org_id:
     else:
         lines.append("- none on file")
 
-    lines.extend(["", "Projects:"])
-    if projects:
-        for project in projects:
-            lines.append(f"- {project.name}: status={project.status}, health={project.health or 'unknown'}")
+    lines.extend(["", "Completed projects:"])
+    completed = [p for p in projects if p.status == "completed"]
+    if completed:
+        for project in completed:
+            lines.append(f"- {project.name}")
     else:
         lines.append("- none")
 
-    lines.extend(["", "Recent touchpoints:"])
+    lines.extend(["", "Recent retention touchpoints (call/email only):"])
     if touchpoints:
         for tp in touchpoints:
             lines.append(
@@ -178,19 +185,23 @@ async def draft_retention_sequence(
     actor: User,
     company_id: UUID,
 ) -> GeneratedSequenceDraft:
+    await assert_company_retention_eligible(db, company_id)
     context = await _gather_company_context(db, company_id=company_id, org_id=actor.org_id)
     prompt = (
-        "You are an advisory assistant for a client retention CRM. "
-        "Analyze the client data and propose a retention touchpoint sequence. "
+        "You are an advisory assistant for post-project client retention in a CRM. "
+        "The client's delivery work is finished — propose a follow-up sequence using ONLY "
+        "phone calls and emails to maintain the relationship and prevent churn. "
+        "Do NOT include meetings, QBRs, workshops, internal tasks, or any project delivery work.\n"
         "Return ONLY valid JSON with keys:\n"
-        "name (string), description (string), trigger_type (always 'manual'), "
-        "strategy_summary (string explaining the retention approach), "
+        "name (string), description (string), "
+        "trigger_type (prefer 'on_project_completed' or 'manual'), "
+        "strategy_summary (string explaining the post-delivery retention approach), "
         "steps (array of objects with: name, channel, offset_days, assignee_role, action_message).\n"
-        "channel must be one of: email, call, meeting, internal_task.\n"
-        "assignee_role must be one of: project_manager, team_member, designer, qa, developer, admin, or null.\n"
+        "channel must be ONLY 'email' or 'call'.\n"
+        "assignee_role must be one of: project_manager, team_member, admin, or null.\n"
         "offset_days must be non-decreasing integers starting at 0.\n"
-        "Include 3-6 steps with realistic gaps based on client health and engagement.\n"
-        "action_message should be a concise suggested script or talking points.\n"
+        "Include 3-6 steps with realistic gaps (e.g. day 0 check-in call, day 7 thank-you email, day 30 feedback call).\n"
+        "action_message should be concise talking points or email draft text.\n"
         "Do not include markdown.\n\n"
         f"Client data:\n{context}\n"
     )

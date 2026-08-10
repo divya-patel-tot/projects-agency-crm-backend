@@ -27,6 +27,15 @@ from app.db.models.retention import (
 )
 from app.db.models.user import User
 from app.graphql.retention.ai_assist import draft_retention_sequence
+from app.graphql.retention.eligibility import (
+    RETENTION_TRIGGER_TYPES,
+    assert_company_retention_eligible,
+    assert_completed_project_for_company,
+    assert_retention_channel,
+    assert_retention_trigger,
+    get_company_retention_eligibility,
+    get_latest_completed_project_id,
+)
 from app.graphql.retention.repository import (
     get_active_sequences_by_trigger,
     get_email_template,
@@ -34,7 +43,6 @@ from app.graphql.retention.repository import (
     get_sequence,
     get_step,
     get_touchpoint,
-    has_active_enrollment_for_sequence,
     list_sequences,
     list_steps_for_sequence,
     list_touchpoints_for_company,
@@ -126,6 +134,8 @@ async def create_sequence_record(
     source: str = SequenceSource.MANUAL.value,
     ai_rationale: str | None = None,
 ) -> RetentionSequence:
+    assert_retention_trigger(trigger_type)
+    await assert_company_retention_eligible(db, company_id)
     seq = RetentionSequence(
         org_id=actor.org_id,
         name=name,
@@ -164,6 +174,10 @@ async def update_sequence_record(
     if seq.status in {SequenceStatus.PENDING.value, SequenceStatus.REJECTED.value}:
         raise DomainError("This sequence cannot be edited in its current status", code="conflict")
     before = _sequence_dict(seq)
+    if updates.get("trigger_type") is not None:
+        assert_retention_trigger(updates["trigger_type"])
+    if updates.get("company_id") is not None:
+        await assert_company_retention_eligible(db, updates["company_id"])
     for key, value in updates.items():
         if value is not None and hasattr(seq, key):
             setattr(seq, key, value)
@@ -232,6 +246,7 @@ async def add_sequence_step(
     seq = await get_retention_sequence(db, sequence_id, actor=actor)
     if seq.status in {SequenceStatus.PENDING.value, SequenceStatus.REJECTED.value}:
         raise DomainError("This sequence cannot be edited in its current status", code="conflict")
+    assert_retention_channel(channel)
     existing = await list_steps_for_sequence(db, sequence_id)
     order = step_order if step_order is not None else len(existing)
     step = RetentionSequenceStep(
@@ -268,6 +283,7 @@ async def update_sequence_step(
     if seq.status in {SequenceStatus.PENDING.value, SequenceStatus.REJECTED.value}:
         raise DomainError("This sequence cannot be edited in its current status", code="conflict")
     if channel is not None:
+        assert_retention_channel(channel)
         step.channel = channel
     if offset_days is not None:
         step.offset_days = offset_days
@@ -330,6 +346,8 @@ async def _create_enrollment(
     steps = await list_steps_for_sequence(db, sequence.id)
     if not steps:
         raise DomainError("Sequence has no steps", code="validation_error")
+    for step in steps:
+        assert_retention_channel(step.channel)
 
     now = datetime.now(UTC)
     enrollment = RetentionEnrollment(
@@ -372,13 +390,26 @@ async def enroll_in_sequence(
         raise DomainError("Use auto-enrollment for non-manual trigger sequences", code="validation_error")
     if sequence.company_id and sequence.company_id != company_id:
         raise DomainError("This sequence belongs to a different client company", code="validation_error")
+    await assert_company_retention_eligible(db, company_id)
+    resolved_project_id = project_id
+    if resolved_project_id is not None:
+        await assert_completed_project_for_company(
+            db, company_id=company_id, project_id=resolved_project_id
+        )
+    else:
+        resolved_project_id = await get_latest_completed_project_id(db, company_id)
+        if resolved_project_id is None:
+            raise DomainError(
+                "Link enrollment to a completed project — retention starts after delivery.",
+                code="validation_error",
+            )
     return await _create_enrollment(
         db,
         org_id=actor.org_id,
         sequence=sequence,
         company_id=company_id,
         contact_id=contact_id,
-        project_id=project_id,
+        project_id=resolved_project_id,
         actor_id=actor.id,
     )
 
@@ -391,24 +422,8 @@ async def enroll_renewal_sequences(
     contact_id: UUID,
     actor_id: UUID | None = None,
 ) -> list[RetentionEnrollment]:
-    """Enroll company in all active ON_RENEWAL_APPROACHING sequences (idempotent per sequence)."""
-    sequences = await get_active_sequences_by_trigger(
-        db, SequenceTriggerType.ON_RENEWAL_APPROACHING.value, company_id=company_id,
-    )
-    enrollments: list[RetentionEnrollment] = []
-    for sequence in sequences:
-        if await has_active_enrollment_for_sequence(db, company_id=company_id, sequence_id=sequence.id):
-            continue
-        enrollment = await _create_enrollment(
-            db,
-            org_id=org_id,
-            sequence=sequence,
-            company_id=company_id,
-            contact_id=contact_id,
-            actor_id=actor_id,
-        )
-        enrollments.append(enrollment)
-    return enrollments
+    """Retention is post-project call/email follow-up only — renewal auto-enroll is disabled."""
+    return []
 
 
 async def try_auto_enroll(
@@ -421,8 +436,19 @@ async def try_auto_enroll(
     project_id: UUID | None = None,
     actor_id: UUID | None = None,
 ) -> list[RetentionEnrollment]:
-    if trigger_type == SequenceTriggerType.ON_RENEWAL_APPROACHING.value:
+    if trigger_type not in RETENTION_TRIGGER_TYPES:
         return []
+
+    eligibility = await get_company_retention_eligibility(db, company_id)
+    if not eligibility.eligible:
+        return []
+
+    if trigger_type == SequenceTriggerType.ON_PROJECT_COMPLETED.value:
+        if project_id is None:
+            return []
+        await assert_completed_project_for_company(
+            db, company_id=company_id, project_id=project_id
+        )
 
     sequences = await get_active_sequences_by_trigger(db, trigger_type, company_id=company_id)
     enrollments: list[RetentionEnrollment] = []
@@ -598,6 +624,9 @@ async def submit_sequence_for_approval(
     steps = await list_steps_for_sequence(db, sequence_id)
     if not steps:
         raise DomainError("Add at least one step before submitting", code="validation_error")
+    for step in steps:
+        assert_retention_channel(step.channel)
+    await assert_company_retention_eligible(db, seq.company_id)
     seq.status = SequenceStatus.PENDING.value
     seq.is_active = False
     await db.flush()
@@ -673,6 +702,7 @@ async def generate_ai_retention_sequence(
     actor: User,
     company_id: UUID,
 ) -> RetentionSequence:
+    await assert_company_retention_eligible(db, company_id)
     draft = await draft_retention_sequence(db, actor=actor, company_id=company_id)
     seq = await create_sequence_record(
         db,
