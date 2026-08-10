@@ -176,6 +176,7 @@ class ProjectMutation:
         start_date: date | None = None,
         end_date: date | None = None,
         budget: float | None = None,
+        actual_cost: float | None = None,
         currency: str = "GBP",
         health: str | None = "on_track",
     ) -> ProjectType:
@@ -193,6 +194,7 @@ class ProjectMutation:
                 start_date=start_date,
                 end_date=end_date,
                 budget=budget,
+                actual_cost=actual_cost,
                 currency=currency,
                 health=health,
             )
@@ -213,6 +215,7 @@ class ProjectMutation:
         start_date: date | None = None,
         end_date: date | None = None,
         budget: float | None = None,
+        actual_cost: float | None = None,
         currency: str | None = None,
         health: str | None = None,
     ) -> ProjectType:
@@ -231,6 +234,7 @@ class ProjectMutation:
                     "start_date": start_date,
                     "end_date": end_date,
                     "budget": budget,
+                    "actual_cost": actual_cost,
                     "currency": currency,
                     "health": health,
                 },
