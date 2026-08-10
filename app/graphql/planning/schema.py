@@ -226,6 +226,8 @@ class WorkloadType:
     open_task_count: int
     project_count: int
     client_count: int
+    project_ids: list[strawberry.ID]
+    client_ids: list[strawberry.ID]
 
 
 @strawberry.type
@@ -262,6 +264,8 @@ class PlanningQuery:
                 open_task_count=row["open_task_count"],
                 project_count=row["project_count"],
                 client_count=row["client_count"],
+                project_ids=[strawberry.ID(str(pid)) for pid in row["project_ids"]],
+                client_ids=[strawberry.ID(str(cid)) for cid in row["client_ids"]],
             )
             for row in rows
         ]

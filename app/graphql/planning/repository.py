@@ -258,12 +258,16 @@ async def compute_workload(
         stats = task_stats.get(
             user_id, {"total_estimated_hours": 0.0, "total_actual_hours": 0.0, "open_task_count": 0}
         )
+        user_project_ids = projects_by_user.get(user_id, set())
+        user_company_ids = companies_by_user.get(user_id, set())
         rows.append(
             {
                 "assignee_id": user_id,
                 **stats,
-                "project_count": len(projects_by_user.get(user_id, ())),
-                "client_count": len(companies_by_user.get(user_id, ())),
+                "project_count": len(user_project_ids),
+                "client_count": len(user_company_ids),
+                "project_ids": list(user_project_ids),
+                "client_ids": list(user_company_ids),
             }
         )
     return rows
