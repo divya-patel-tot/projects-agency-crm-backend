@@ -356,7 +356,7 @@ class ChangeRequestMutation:
             except Exception as exc:
                 _gql_error(exc)
 
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         from app.graphql.change_requests.repository import get_project_for_cr
 
         project = await get_project_for_cr(ctx.db, UUID(str(project_id)))

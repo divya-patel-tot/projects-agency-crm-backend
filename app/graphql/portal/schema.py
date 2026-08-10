@@ -340,7 +340,7 @@ class DocumentMutation:
             ctx = require_portal(info.context)
             company_id = ctx.company_id
         else:
-            ctx = require_authenticated(info.context)
+            ctx = require_role(info.context, "admin", "project_manager")
             company_id = None
         try:
             result = await request_upload_url(
@@ -375,7 +375,7 @@ class DocumentMutation:
             actor_id = ctx.contact.id
             company_id = ctx.company_id
         else:
-            ctx = require_authenticated(info.context)
+            ctx = require_role(info.context, "admin", "project_manager")
             actor_id = ctx.user.id
             company_id = None
         try:

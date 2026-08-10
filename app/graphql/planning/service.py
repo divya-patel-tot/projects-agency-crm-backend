@@ -298,14 +298,25 @@ async def create_task_record(
     return task
 
 
+TEAM_MEMBER_EDITABLE_TASK_FIELDS = {"status"}
+
+
 async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, updates: dict) -> Task:
     task = await get_task(db, task_id)
     if task is None:
         raise NotFoundError("Task not found")
-    if actor.role == UserRole.TEAM_MEMBER.value and not await actor_can_access_project(
-        db, actor, task.project_id
-    ):
-        raise AuthorizationError("You don't have access to this project.")
+    if actor.role == UserRole.TEAM_MEMBER.value:
+        if not await actor_can_access_project(db, actor, task.project_id):
+            raise AuthorizationError("You don't have access to this project.")
+        if task.assignee_id != actor.id:
+            raise AuthorizationError("You can only update tasks assigned to you.")
+        disallowed = {
+            key
+            for key, value in updates.items()
+            if value is not None and key not in TEAM_MEMBER_EDITABLE_TASK_FIELDS
+        }
+        if disallowed:
+            raise AuthorizationError("You can only update the status of your own tasks.")
     before = _task_dict(task)
     prev_assignee_id = task.assignee_id
     for key, value in updates.items():
