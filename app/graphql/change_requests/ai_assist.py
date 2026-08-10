@@ -9,10 +9,11 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import DomainError, NotFoundError
+from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.enums import ChangeRequestStatus
 from app.db.models.user import User
 from app.graphql.change_requests.repository import get_change_request
+from app.graphql.projects.service import actor_can_mutate_project
 from app.integrations.groq_client import generate_text
 
 
@@ -69,6 +70,8 @@ async def draft_impact_assessment(
     cr = await get_change_request(db, cr_id)
     if cr is None:
         raise NotFoundError("Change request not found")
+    if not await actor_can_mutate_project(db, actor, cr.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     if cr.status not in _ALLOWED_STATUSES:
         raise DomainError(
             "Impact draft is only available while the change request is under review",

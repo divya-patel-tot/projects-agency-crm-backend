@@ -268,6 +268,7 @@ class ApprovalMutation:
                 ctx.db,
                 org_id=ctx.org.id,
                 milestone_id=UUID(str(milestone_id)),
+                actor=ctx.user,
             )
             return ApprovalType.from_model(row)
         except Exception as exc:
@@ -322,9 +323,11 @@ class DocumentMutation:
         if info.context.actor_type == ActorType.PORTAL:
             ctx = require_portal(info.context)
             company_id = ctx.company_id
+            actor = None
         else:
             ctx = require_role(info.context, "admin", "project_manager")
             company_id = None
+            actor = ctx.user
         try:
             result = await request_upload_url(
                 ctx.db,
@@ -336,6 +339,7 @@ class DocumentMutation:
                 filename=filename,
                 content_type=content_type,
                 upload_base_url=str(ctx.request.base_url).rstrip("/"),
+                actor=actor,
             )
             return UploadUrlPayload(
                 upload_url=result.upload_url,
@@ -357,10 +361,12 @@ class DocumentMutation:
             ctx = require_portal(info.context)
             actor_id = ctx.contact.id
             company_id = ctx.company_id
+            actor = None
         else:
             ctx = require_role(info.context, "admin", "project_manager")
             actor_id = ctx.user.id
             company_id = None
+            actor = ctx.user
         try:
             row = await confirm_upload(
                 ctx.db,
@@ -371,6 +377,7 @@ class DocumentMutation:
                 entity_type=entity_type,
                 entity_id=UUID(str(entity_id)),
                 file_url=file_url,
+                actor=actor,
             )
             return DocumentType.from_model(row)
         except Exception as exc:
@@ -382,10 +389,12 @@ class DocumentMutation:
             ctx = require_portal(info.context)
             actor_id = ctx.contact.id
             actor_role = None
+            actor = None
         else:
             ctx = require_authenticated(info.context)
             actor_id = ctx.user.id
             actor_role = ctx.user.role
+            actor = ctx.user
         try:
             await delete_document_record(
                 ctx.db,
@@ -393,6 +402,7 @@ class DocumentMutation:
                 actor_type=ctx.actor_type,
                 actor_id=actor_id,
                 actor_role=actor_role,
+                actor=actor,
             )
             return True
         except Exception as exc:

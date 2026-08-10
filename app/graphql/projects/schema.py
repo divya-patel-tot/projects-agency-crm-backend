@@ -22,6 +22,7 @@ from app.graphql.loaders import (
 from app.graphql.planning.schema import PhaseType, TaskType
 from app.graphql.projects.completion import compute_project_completion_percent
 from app.graphql.projects.service import (
+    actor_can_mutate_project,
     add_project_contact_record,
     add_project_member_record,
     create_project_record,
@@ -129,6 +130,12 @@ class ProjectType:
         loader = get_tags_by_project_loader(info.context)
         rows = await loader.load(UUID(str(self.id)))
         return [TagType(id=strawberry.ID(str(row.id)), name=row.name) for row in rows]
+
+    @strawberry.field
+    async def can_manage(self, info: Info) -> bool:
+        if info.context.db is None or info.context.user is None:
+            return False
+        return await actor_can_mutate_project(info.context.db, info.context.user, UUID(str(self.id)))
 
     @strawberry.field
     async def completion_percent(self, info: Info) -> int:
