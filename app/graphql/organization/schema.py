@@ -102,18 +102,20 @@ class OrganizationMutation:
                 if value is not None:
                     current[key] = value
 
+            # Touchpoints no longer part of health scoring — always persist as zero.
+            current["health_weight_touchpoints"] = 0.0
+
             weight_keys = [
                 "health_weight_project_health",
-                "health_weight_touchpoints",
                 "health_weight_change_requests",
                 "health_weight_contract",
                 "health_weight_company_status",
             ]
-            if any(updates[key] is not None for key in weight_keys):
+            if any(updates.get(key) is not None for key in [*weight_keys, "health_weight_touchpoints"]):
                 total = sum(float(current.get(key, 0)) for key in weight_keys)
                 if abs(total - 1.0) > WEIGHT_SUM_TOLERANCE:
                     raise DomainError(
-                        f"The five health weights must add up to 1.0 (currently {total:.2f}).",
+                        f"The four health weights must add up to 1.0 (currently {total:.2f}).",
                         code="bad_user_input",
                     )
 

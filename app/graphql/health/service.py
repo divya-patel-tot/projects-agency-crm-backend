@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import ChangeRequestStatus, CompanyStatus, ProjectHealth, TouchpointOutcome
+from app.db.enums import ChangeRequestStatus, CompanyStatus, ProjectHealth
 from app.db.models.change_request import ChangeRequest
 from app.db.models.client_health import ClientHealthScore
 from app.db.models.company import Company
 from app.db.models.contact import Contact
 from app.db.models.organization import Organization
 from app.db.models.project import Project
-from app.db.models.retention import Touchpoint
 from app.db.models.user import User
 from app.graphql.contracts.repository import list_contracts
 from app.graphql.notifications.service import notify
@@ -49,11 +48,14 @@ _PROJECT_HEALTH_POINTS = {
     ProjectHealth.DELAYED.value: 25.0,
 }
 
-_TOUCHPOINT_OUTCOME_POINTS = {
-    TouchpointOutcome.POSITIVE.value: 100.0,
-    TouchpointOutcome.NEUTRAL.value: 70.0,
-    TouchpointOutcome.AT_RISK.value: 30.0,
-}
+# Touchpoint factor disabled — restore when retention touchpoints should affect health again.
+# from app.db.enums import TouchpointOutcome
+# from app.db.models.retention import Touchpoint
+# _TOUCHPOINT_OUTCOME_POINTS = {
+#     TouchpointOutcome.POSITIVE.value: 100.0,
+#     TouchpointOutcome.NEUTRAL.value: 70.0,
+#     TouchpointOutcome.AT_RISK.value: 30.0,
+# }
 
 _COMPANY_STATUS_POINTS = {
     CompanyStatus.ACTIVE.value: 100.0,
@@ -114,7 +116,6 @@ async def compute_company_health_factors(
     today: date | None = None,
 ) -> tuple[float, dict]:
     today = today or date.today()
-    cutoff = datetime.now(UTC) - timedelta(days=90)
 
     project_rows = await db.execute(
         select(Project).where(
@@ -133,21 +134,26 @@ async def compute_company_health_factors(
         project_value = 75.0
         project_detail = "No active projects (neutral default)"
 
-    tp_rows = await db.execute(
-        select(Touchpoint).where(
-            Touchpoint.company_id == company.id,
-            Touchpoint.completed_at.is_not(None),
-            Touchpoint.completed_at >= cutoff,
-        )
-    )
-    touchpoints = list(tp_rows.scalars().all())
-    if touchpoints:
-        tp_values = [_TOUCHPOINT_OUTCOME_POINTS.get(tp.outcome or TouchpointOutcome.NEUTRAL.value, 70.0) for tp in touchpoints]
-        touchpoint_value = sum(tp_values) / len(tp_values)
-        touchpoint_detail = f"{len(touchpoints)} touchpoints in last 90 days"
-    else:
-        touchpoint_value = 70.0
-        touchpoint_detail = "No recent touchpoints (neutral default)"
+    # --- Touchpoint factor (disabled) -----------------------------------------
+    # cutoff = datetime.now(UTC) - timedelta(days=90)
+    # tp_rows = await db.execute(
+    #     select(Touchpoint).where(
+    #         Touchpoint.company_id == company.id,
+    #         Touchpoint.completed_at.is_not(None),
+    #         Touchpoint.completed_at >= cutoff,
+    #     )
+    # )
+    # touchpoints = list(tp_rows.scalars().all())
+    # if touchpoints:
+    #     tp_values = [
+    #         _TOUCHPOINT_OUTCOME_POINTS.get(tp.outcome or TouchpointOutcome.NEUTRAL.value, 70.0)
+    #         for tp in touchpoints
+    #     ]
+    #     touchpoint_value = sum(tp_values) / len(tp_values)
+    #     touchpoint_detail = f"{len(touchpoints)} touchpoints in last 90 days"
+    # else:
+    #     touchpoint_value = 70.0
+    #     touchpoint_detail = "No recent touchpoints (neutral default)"
 
     cr_count = (
         await db.execute(
@@ -175,7 +181,6 @@ async def compute_company_health_factors(
 
     factors = [
         FactorResult("project_health", project_value, settings.weight_project_health, project_detail),
-        FactorResult("touchpoints", touchpoint_value, settings.weight_touchpoints, touchpoint_detail),
         FactorResult("change_requests", cr_value, settings.weight_change_requests, cr_detail),
         FactorResult("contract", contract_value, settings.weight_contract, contract_detail),
         FactorResult("company_status", status_value, settings.weight_company_status, status_detail),

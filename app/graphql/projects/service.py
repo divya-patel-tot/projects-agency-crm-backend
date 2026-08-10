@@ -12,6 +12,7 @@ from app.db.models.project import Project
 from app.db.models.project_contact import ProjectContact
 from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
+from app.graphql.health.service import refresh_company_health_score
 from app.graphql.notifications.service import notify
 from app.graphql.projects.repository import (
     create_project,
@@ -124,6 +125,8 @@ async def create_project_record(
     )
     if project_manager_id is not None:
         await ensure_project_member(db, org_id=actor.org_id, project_id=project.id, user_id=project_manager_id)
+    if project.status == ProjectStatus.ACTIVE.value:
+        await refresh_company_health_score(db, company_id=project.company_id, org_id=actor.org_id)
     return project
 
 
@@ -139,6 +142,7 @@ async def update_project_record(
         raise AuthorizationError("You're not assigned to this project.")
     before = _project_to_dict(project)
     prev_status = project.status
+    prev_health = project.health
     prev_pm_id = project.project_manager_id
     for key, value in updates.items():
         if value is not None and hasattr(project, key):
@@ -174,6 +178,12 @@ async def update_project_record(
                 project_id=project.id,
                 actor_id=actor.id,
             )
+    health_inputs_changed = (
+        ("health" in updates and updates["health"] is not None and project.health != prev_health)
+        or ("status" in updates and updates["status"] is not None and project.status != prev_status)
+    )
+    if health_inputs_changed:
+        await refresh_company_health_score(db, company_id=project.company_id, org_id=actor.org_id)
     return project
 
 
@@ -218,6 +228,7 @@ async def delete_project_record(db: AsyncSession, *, actor: User, project_id: UU
     if not await actor_can_mutate_project(db, actor, project.id):
         raise AuthorizationError("You're not assigned to this project.")
     before = _project_to_dict(project)
+    was_active = project.status == ProjectStatus.ACTIVE.value
     await soft_delete_project(db, project)
     await write_activity_log(
         db,
@@ -228,6 +239,8 @@ async def delete_project_record(db: AsyncSession, *, actor: User, project_id: UU
         entity_id=project.id,
         diff={"before": before},
     )
+    if was_active:
+        await refresh_company_health_score(db, company_id=project.company_id, org_id=actor.org_id)
     return project
 
 

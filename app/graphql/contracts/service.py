@@ -10,6 +10,7 @@ from app.db.models.contract import Contract
 from app.db.models.user import User
 from app.graphql.companies.repository import get_company
 from app.graphql.contracts.repository import create_contract_row, get_contract, list_contracts
+from app.graphql.health.service import refresh_company_health_score
 
 
 def _contract_dict(row: Contract) -> dict:
@@ -78,6 +79,7 @@ async def create_contract_record(
         entity_id=row.id,
         diff={"after": _contract_dict(row)},
     )
+    await refresh_company_health_score(db, company_id=company_id, org_id=actor.org_id)
     return row
 
 
@@ -122,11 +124,13 @@ async def update_contract_record(
         entity_id=row.id,
         diff={"before": before, "after": _contract_dict(row)},
     )
+    await refresh_company_health_score(db, company_id=row.company_id, org_id=actor.org_id)
     return row
 
 
 async def delete_contract_record(db: AsyncSession, *, actor: User, contract_id: UUID) -> bool:
     row = await get_contract_by_id(db, contract_id)
+    company_id = row.company_id
     from datetime import UTC, datetime
 
     row.deleted_at = datetime.now(UTC)
@@ -140,4 +144,5 @@ async def delete_contract_record(db: AsyncSession, *, actor: User, contract_id: 
         entity_id=row.id,
         diff={"before": _contract_dict(row)},
     )
+    await refresh_company_health_score(db, company_id=company_id, org_id=actor.org_id)
     return True

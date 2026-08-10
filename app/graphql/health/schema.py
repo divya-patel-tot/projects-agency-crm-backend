@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID
 
 import strawberry
-from sqlalchemy import func, select
 from strawberry.types import Info
+
+from sqlalchemy import func, select
 
 from app.core.deps import require_authenticated
 from app.db.enums import EnrollmentStatus, TouchpointStatus
@@ -16,9 +17,8 @@ from app.graphql.health.service import get_at_risk_companies, get_company_health
 from app.graphql.org_settings import health_settings_from_dict
 from app.graphql.retention.schema import RetentionEnrollmentType
 
-# How far back "recent contact" looks — matches the 90-day window
-# compute_company_health_factors uses for its own touchpoint factor.
-NO_RECENT_CONTACT_DAYS = 90
+# Touchpoint signals disabled for at-risk reasons — restore when needed.
+# NO_RECENT_CONTACT_DAYS = 90
 
 
 @strawberry.type
@@ -52,13 +52,13 @@ class AtRiskCompanyType:
         ctx = require_authenticated(info.context)
         reasons = ["LOW_HEALTH_SCORE"]
 
-        if await self._overdue_touchpoint_count(ctx.db) > 0:
-            reasons.append("OVERDUE_TOUCHPOINTS")
+        # if await self._overdue_touchpoint_count(ctx.db) > 0:
+        #     reasons.append("OVERDUE_TOUCHPOINTS")
 
-        last_at = await self._last_touchpoint_at(ctx.db)
-        cutoff = datetime.now(UTC) - timedelta(days=NO_RECENT_CONTACT_DAYS)
-        if last_at is None or last_at < cutoff:
-            reasons.append("NO_RECENT_CONTACT")
+        # last_at = await self._last_touchpoint_at(ctx.db)
+        # cutoff = datetime.now(UTC) - timedelta(days=NO_RECENT_CONTACT_DAYS)
+        # if last_at is None or last_at < cutoff:
+        #     reasons.append("NO_RECENT_CONTACT")
 
         return reasons
 

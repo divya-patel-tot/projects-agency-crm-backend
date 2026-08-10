@@ -48,7 +48,7 @@
 ### Delivered
 
 1. **Migration 008:** `client_health_scores`, `contracts` + RLS.
-2. **Health scoring:** Weighted factors (projects, touchpoints, CRs, contract, status) from org settings; append-only history; syncs `companies.health_score`.
+2. **Health scoring:** Weighted factors (project health, open CRs, contract, company status) from org settings; touchpoints excluded for now; append-only history; syncs `companies.health_score`.
 3. **GraphQL:** `atRiskCompanies`, `healthScoreHistory`, contract CRUD.
 4. **Jobs:** `recalculate_health_scores` (nightly), `contract_renewal_check` (daily), `weekly_digest_email` (Monday).
 5. **GROQ:** Optional `ai_summary` on health records; failure → null.
@@ -59,8 +59,8 @@
 
 | Key | Default | Purpose |
 |-----|---------|---------|
-| `health_weight_project_health` | 0.35 | Project health factor weight |
-| `health_weight_touchpoints` | 0.25 | Touchpoint engagement weight |
+| `health_weight_project_health` | 0.60 | Project health factor weight |
+| `health_weight_touchpoints` | 0.0 | Reserved (not used in scoring) |
 | `health_weight_change_requests` | 0.15 | Open CR burden weight |
 | `health_weight_contract` | 0.15 | Contract renewal proximity weight |
 | `health_weight_company_status` | 0.10 | Company status weight |
