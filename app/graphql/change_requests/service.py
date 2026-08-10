@@ -51,6 +51,7 @@ from app.graphql.change_requests.state_machine import (
     org_settings_from_dict,
     validate_transition,
 )
+from app.graphql.health.service import refresh_company_health_score
 from app.graphql.projects.service import actor_can_mutate_project
 
 
@@ -147,6 +148,7 @@ async def _apply_model_transition(
     await _write_transition_log(db, org_id=org_id, actor_id=actor_id, cr=cr, before=before, to_status=to_status, reason=reason)
     if result.trigger_escalation:
         await _notify_manager_escalation(db, cr=cr, org_id=org_id)
+    await refresh_company_health_score(db, company_id=cr.company_id, org_id=org_id)
     return cr
 
 
@@ -343,6 +345,7 @@ async def create_change_request(
             message=f'"{cr.title}" was raised on {project.name}',
             link=f"/projects/{project.id}/change-requests",
         )
+    await refresh_company_health_score(db, company_id=company_id, org_id=org_id)
     return cr
 
 

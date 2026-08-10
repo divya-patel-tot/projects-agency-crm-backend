@@ -13,6 +13,7 @@ from app.graphql.companies.repository import (
     list_companies,
     soft_delete_company,
 )
+from app.graphql.health.service import refresh_company_health_score
 
 
 def _company_to_dict(company: Company) -> dict:
@@ -80,6 +81,7 @@ async def create_company_record(
         entity_id=company.id,
         diff={"after": _company_to_dict(company)},
     )
+    await refresh_company_health_score(db, company_id=company.id, org_id=actor.org_id)
     return company
 
 
@@ -105,6 +107,7 @@ async def update_company_record(
         entity_id=company.id,
         diff={"before": before, "after": _company_to_dict(company)},
     )
+    await refresh_company_health_score(db, company_id=company.id, org_id=actor.org_id)
     return company
 
 

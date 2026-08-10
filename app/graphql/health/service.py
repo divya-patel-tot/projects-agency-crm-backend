@@ -14,6 +14,7 @@ from app.db.models.change_request import ChangeRequest
 from app.db.models.client_health import ClientHealthScore
 from app.db.models.company import Company
 from app.db.models.contact import Contact
+from app.db.models.organization import Organization
 from app.db.models.project import Project
 from app.db.models.retention import Touchpoint
 from app.db.models.user import User
@@ -37,6 +38,10 @@ OPEN_CR_STATUSES = [
     ChangeRequestStatus.APPROVED.value,
     ChangeRequestStatus.IN_PROGRESS.value,
 ]
+
+SCORABLE_COMPANY_STATUSES = frozenset(
+    {CompanyStatus.ACTIVE.value, CompanyStatus.PAUSED.value},
+)
 
 _PROJECT_HEALTH_POINTS = {
     ProjectHealth.ON_TRACK.value: 100.0,
@@ -190,6 +195,30 @@ async def maybe_generate_ai_summary(score: float, factors: dict, company_name: s
         "This is advisory only for an account manager — do not prescribe automatic actions."
     )
     return await generate_text(prompt, timeout=5)
+
+
+async def refresh_company_health_score(
+    db: AsyncSession,
+    *,
+    company_id: UUID,
+    org_id: UUID | None = None,
+    include_ai: bool = False,
+) -> ClientHealthScore | None:
+    """Recalculate and persist health for one company when it is active/paused."""
+    company = await db.get(Company, company_id)
+    if company is None or company.deleted_at is not None:
+        return None
+    if company.status not in SCORABLE_COMPANY_STATUSES:
+        return None
+
+    org = await db.get(Organization, org_id or company.org_id)
+    settings = health_settings_from_dict(org.settings if org else {})
+    return await record_company_health_score(
+        db,
+        company=company,
+        settings=settings,
+        include_ai=include_ai,
+    )
 
 
 async def record_company_health_score(
