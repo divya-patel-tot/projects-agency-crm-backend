@@ -1,11 +1,13 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_activity_log
 from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.enums import ProjectStatus, UserRole
 from app.db.models.contact import Contact
+from app.db.models.planning import Task
 from app.db.models.project import Project
 from app.db.models.project_contact import ProjectContact
 from app.db.models.project_member import ProjectMember
@@ -34,28 +36,31 @@ def _project_to_dict(project: Project) -> dict:
     }
 
 
+_PROJECT_SCOPED_ROLES = (UserRole.TEAM_MEMBER.value, UserRole.PROJECT_MANAGER.value)
+
+
 async def get_projects(
     db: AsyncSession, company_id: UUID | None = None, *, actor: User | None = None
 ) -> list[Project]:
-    member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
+    member_user_id = actor.id if actor is not None and actor.role in _PROJECT_SCOPED_ROLES else None
     return await list_projects(db, company_id, member_user_id)
 
 
 async def actor_can_access_project(db: AsyncSession, actor: User, project_id: UUID) -> bool:
-    """Whether `actor` can see data scoped to `project_id` — everyone but a
-    team member can see everything; a team member only what they're on.
+    """Whether `actor` can see data scoped to `project_id` — admins see
+    everything; a team member or project manager only what they're on.
     Mirrors the scoping in `get_projects`/`get_project_by_id`, for the
     project-scoped endpoints (change requests, phases, workload) that don't
     go through those two directly.
     """
-    if actor.role != UserRole.TEAM_MEMBER.value:
+    if actor.role not in _PROJECT_SCOPED_ROLES:
         return True
     member = await get_project_member(db, project_id, actor.id)
     return member is not None
 
 
 async def get_project_by_id(db: AsyncSession, project_id: UUID, *, actor: User | None = None) -> Project:
-    member_user_id = actor.id if actor is not None and actor.role == UserRole.TEAM_MEMBER.value else None
+    member_user_id = actor.id if actor is not None and actor.role in _PROJECT_SCOPED_ROLES else None
     project = await get_project(db, project_id, member_user_id)
     if project is None:
         raise NotFoundError("Project not found")
@@ -135,6 +140,8 @@ async def update_project_record(
     )
     if project.project_manager_id is not None and project.project_manager_id != prev_pm_id:
         await ensure_project_member(db, org_id=actor.org_id, project_id=project.id, user_id=project.project_manager_id)
+    if prev_pm_id is not None and prev_pm_id != project.project_manager_id:
+        await _remove_stale_pm_membership(db, actor=actor, project=project, old_pm_id=prev_pm_id)
     if prev_status != ProjectStatus.COMPLETED.value and project.status == ProjectStatus.COMPLETED.value:
         from app.db.enums import SequenceTriggerType
         from app.graphql.contacts.repository import get_contacts_by_company_ids
@@ -153,6 +160,42 @@ async def update_project_record(
                 actor_id=actor.id,
             )
     return project
+
+
+async def _remove_stale_pm_membership(db: AsyncSession, *, actor: User, project: Project, old_pm_id: UUID) -> None:
+    """When a project gets a new PM, the outgoing one keeps their team
+    membership unless we clean it up here — otherwise they silently keep
+    seeing a project they no longer manage. Skipped if they still have an
+    open task on it, so real work in progress doesn't just vanish from their
+    view.
+    """
+    still_has_open_task = await db.scalar(
+        select(Task.id).where(
+            Task.project_id == project.id,
+            Task.assignee_id == old_pm_id,
+            Task.deleted_at.is_(None),
+            Task.status != "done",
+        ).limit(1)
+    )
+    if still_has_open_task is not None:
+        return
+
+    membership = await get_project_member(db, project.id, old_pm_id)
+    if membership is None:
+        return
+
+    old_pm = await db.get(User, old_pm_id)
+    await db.delete(membership)
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="update",
+        entity_type="project",
+        entity_id=project.id,
+        diff={"member_removed": old_pm.name if old_pm else str(old_pm_id), "reason": "no longer project manager"},
+    )
 
 
 async def delete_project_record(db: AsyncSession, *, actor: User, project_id: UUID) -> Project:
@@ -237,6 +280,11 @@ async def remove_project_member_record(
     membership = await get_project_member(db, project.id, target.id)
     if membership is None:
         raise NotFoundError("This person isn't on the project.")
+    if project.project_manager_id == target.id:
+        raise DomainError(
+            "Reassign the project manager before removing them from the project.",
+            code="bad_user_input",
+        )
 
     await db.delete(membership)
     await db.flush()

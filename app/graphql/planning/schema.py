@@ -224,6 +224,8 @@ class WorkloadType:
     total_estimated_hours: float
     total_actual_hours: float
     open_task_count: int
+    project_count: int
+    client_count: int
 
 
 @strawberry.type
@@ -258,6 +260,8 @@ class PlanningQuery:
                 total_estimated_hours=row["total_estimated_hours"],
                 total_actual_hours=row["total_actual_hours"],
                 open_task_count=row["open_task_count"],
+                project_count=row["project_count"],
+                client_count=row["client_count"],
             )
             for row in rows
         ]
