@@ -40,6 +40,7 @@ from app.graphql.retention.repository import (
     get_active_sequences_by_trigger,
     get_email_template,
     get_enrollment,
+    has_active_enrollment_for_contact,
     get_sequence,
     get_step,
     get_touchpoint,
@@ -386,8 +387,6 @@ async def enroll_in_sequence(
     project_id: UUID | None = None,
 ) -> RetentionEnrollment:
     sequence = await get_retention_sequence(db, sequence_id, actor=actor)
-    if sequence.trigger_type != SequenceTriggerType.MANUAL.value:
-        raise DomainError("Use auto-enrollment for non-manual trigger sequences", code="validation_error")
     if sequence.company_id and sequence.company_id != company_id:
         raise DomainError("This sequence belongs to a different client company", code="validation_error")
     await assert_company_retention_eligible(db, company_id)
@@ -403,6 +402,8 @@ async def enroll_in_sequence(
                 "Link enrollment to a completed project — retention starts after delivery.",
                 code="validation_error",
             )
+    if await has_active_enrollment_for_contact(db, sequence_id=sequence.id, contact_id=contact_id):
+        raise DomainError("This contact is already enrolled in this sequence.", code="conflict")
     return await _create_enrollment(
         db,
         org_id=actor.org_id,
@@ -453,6 +454,8 @@ async def try_auto_enroll(
     sequences = await get_active_sequences_by_trigger(db, trigger_type, company_id=company_id)
     enrollments: list[RetentionEnrollment] = []
     for sequence in sequences:
+        if await has_active_enrollment_for_contact(db, sequence_id=sequence.id, contact_id=contact_id):
+            continue
         enrollment = await _create_enrollment(
             db,
             org_id=org_id,

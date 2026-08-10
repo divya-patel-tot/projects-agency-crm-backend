@@ -200,6 +200,22 @@ async def has_active_enrollment_for_sequence(
     return result.scalar_one_or_none() is not None
 
 
+async def has_active_enrollment_for_contact(
+    db: AsyncSession,
+    *,
+    sequence_id: UUID,
+    contact_id: UUID,
+) -> bool:
+    result = await db.execute(
+        select(RetentionEnrollment.id).where(
+            RetentionEnrollment.sequence_id == sequence_id,
+            RetentionEnrollment.contact_id == contact_id,
+            RetentionEnrollment.status == EnrollmentStatus.ACTIVE.value,
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def job_run_exists(db: AsyncSession, *, org_id: UUID, job_name: str, run_date: date) -> bool:
     result = await db.execute(
         select(JobRun.id).where(
