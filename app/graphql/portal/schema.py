@@ -441,7 +441,7 @@ class DocumentQuery:
                 entity_id=UUID(str(entity_id)),
             )
         else:
-            ctx = require_authenticated(info.context)
+            ctx = require_role(info.context, "admin", "project_manager")
             rows = await get_entity_documents(
                 ctx.db,
                 entity_type=entity_type,
@@ -455,6 +455,6 @@ class DocumentQuery:
         info: Info,
         company_id: strawberry.ID,
     ) -> list[DocumentType]:
-        ctx = require_authenticated(info.context)
+        ctx = require_role(info.context, "admin", "project_manager")
         rows = await get_portal_documents(ctx.db, company_id=UUID(str(company_id)))
         return [DocumentType.from_model(row) for row in rows]
