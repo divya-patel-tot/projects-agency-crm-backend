@@ -26,6 +26,7 @@ from app.graphql.documents.repository import (
     soft_delete_document,
     update_document_assets,
 )
+from app.graphql.projects.service import actor_can_mutate_project
 from app.integrations import asset_storage
 
 
@@ -63,6 +64,36 @@ async def _assert_entity_access(
             raise NotFoundError("Entity not found")
 
 
+async def _resolve_document_project_id(db: AsyncSession, *, entity_type: str, entity_id: UUID) -> UUID | None:
+    if entity_type == EntityType.PROJECT.value:
+        return entity_id
+    if entity_type == EntityType.MILESTONE.value:
+        from app.db.models.planning import Milestone, ProjectPhase
+
+        milestone = await db.get(Milestone, entity_id)
+        if milestone is None:
+            return None
+        phase = await db.get(ProjectPhase, milestone.phase_id)
+        return phase.project_id if phase is not None else None
+    return None
+
+
+async def _assert_can_mutate_document_entity(
+    db: AsyncSession, *, actor: User | None, entity_type: str, entity_id: UUID
+) -> None:
+    """Internal-actor-only check: a PM can only touch documents on a project
+    they're assigned to. `actor` is None on the portal path, which has its
+    own, separate `_assert_entity_access` company-scoping — untouched here.
+    """
+    if actor is None:
+        return
+    project_id = await _resolve_document_project_id(db, entity_type=entity_type, entity_id=entity_id)
+    if project_id is None:
+        return
+    if not await actor_can_mutate_project(db, actor, project_id):
+        raise AuthorizationError("You're not assigned to this project.")
+
+
 async def request_upload_url(
     db: AsyncSession,
     *,
@@ -74,9 +105,11 @@ async def request_upload_url(
     filename: str,
     content_type: str,
     upload_base_url: str,
+    actor: User | None = None,
 ) -> UploadUrlResult:
     entity_type = _validate_document_entity_type(entity_type)
     await _assert_entity_access(db, entity_type=entity_type, entity_id=entity_id, company_id=company_id)
+    await _assert_can_mutate_document_entity(db, actor=actor, entity_type=entity_type, entity_id=entity_id)
 
     settings = get_settings()
     try:
@@ -116,9 +149,11 @@ async def confirm_upload(
     entity_type: str,
     entity_id: UUID,
     file_url: str,
+    actor: User | None = None,
 ):
     entity_type = _validate_document_entity_type(entity_type)
     await _assert_entity_access(db, entity_type=entity_type, entity_id=entity_id, company_id=company_id)
+    await _assert_can_mutate_document_entity(db, actor=actor, entity_type=entity_type, entity_id=entity_id)
 
     safe_path = asset_storage.validate_relative_path(file_url)
     if not safe_path.startswith(f"{org_id}/"):
@@ -238,6 +273,7 @@ async def delete_document_record(
     actor_type: ActorType,
     actor_id: UUID,
     actor_role: str | None,
+    actor: User | None = None,
 ):
     document = await get_document(db, document_id)
     if document is None:
@@ -247,6 +283,13 @@ async def delete_document_record(
     is_internal_manager = actor_type == ActorType.INTERNAL and actor_role in ("admin", "project_manager")
     if not (is_own_upload or is_internal_manager):
         raise AuthorizationError("You can only delete documents you uploaded, unless you're an admin or PM")
+
+    # Deleting your own upload is always allowed; acting as an admin/PM on
+    # someone else's upload still requires being assigned to the project.
+    if not is_own_upload:
+        await _assert_can_mutate_document_entity(
+            db, actor=actor, entity_type=document.entity_type, entity_id=document.entity_id
+        )
 
     cleanup_document_files(document)
     return await soft_delete_document(db, document)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_activity_log
@@ -16,6 +17,7 @@ from app.db.enums import (
     EntityType,
     TaskPriority,
     TaskStatus,
+    UserRole,
 )
 from app.db.models.change_request import ChangeRequest
 from app.db.models.contact import Contact
@@ -49,6 +51,7 @@ from app.graphql.change_requests.state_machine import (
     org_settings_from_dict,
     validate_transition,
 )
+from app.graphql.projects.service import actor_can_mutate_project
 
 
 OPEN_STATUSES = frozenset(
@@ -300,6 +303,7 @@ async def create_change_request(
         entity_id=cr.id,
         diff={"after": _cr_to_dict(cr)},
     )
+    notified_ids = {actor_id}
     if project.project_manager_id is not None and project.project_manager_id != actor_id:
         pm = await db.get(User, project.project_manager_id)
         if pm is not None and pm.deleted_at is None:
@@ -313,6 +317,32 @@ async def create_change_request(
                 message=f'"{cr.title}" was raised on {project.name}',
                 link=f"/projects/{project.id}/change-requests",
             )
+            notified_ids.add(pm.id)
+
+    # The assigned PM isn't always the one watching — every org admin gets
+    # the same heads-up so a new request never sits unseen just because the
+    # PM is out or unassigned.
+    admins = (
+        await db.execute(
+            select(User).where(
+                User.org_id == org_id,
+                User.role == UserRole.ADMIN.value,
+                User.deleted_at.is_(None),
+                User.id.notin_(notified_ids),
+            )
+        )
+    ).scalars()
+    for admin in admins:
+        await notify(
+            db,
+            org_id=org_id,
+            recipient=admin,
+            category="change_requests",
+            type_="change_request.created",
+            title="New change request",
+            message=f'"{cr.title}" was raised on {project.name}',
+            link=f"/projects/{project.id}/change-requests",
+        )
     return cr
 
 
@@ -327,6 +357,8 @@ async def transition_change_request(
     cr = await get_change_request(db, cr_id)
     if cr is None:
         raise NotFoundError("Change request not found")
+    if not await actor_can_mutate_project(db, actor, cr.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     transition_actor = actor_from_internal_role(actor.role)
     return await _apply_model_transition(
         db,
@@ -355,6 +387,8 @@ async def submit_impact_assessment(
     cr = await get_change_request(db, cr_id)
     if cr is None:
         raise NotFoundError("Change request not found")
+    if not await actor_can_mutate_project(db, actor, cr.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     if cr.status != ChangeRequestStatus.UNDER_REVIEW.value:
         raise DomainError("Change request must be under review", code="conflict")
 
@@ -433,6 +467,8 @@ async def decide_change_request(
     if approval.approver_type == ApproverType.INTERNAL.value:
         if internal_actor is None or internal_actor.role not in {"project_manager", "admin"}:
             raise AuthorizationError("Internal approver required")
+        if not await actor_can_mutate_project(db, internal_actor, cr.project_id):
+            raise AuthorizationError("You're not assigned to this project.")
         actor_id = internal_actor.id
         org_id = internal_actor.org_id
     elif approval.approver_type == ApproverType.CLIENT.value:
@@ -580,6 +616,8 @@ async def assign_change_request(
     cr = await get_change_request(db, cr_id)
     if cr is None:
         raise NotFoundError("Change request not found")
+    if not await actor_can_mutate_project(db, actor, cr.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
 
     if assigned_pm_id is not None:
         pm = await db.get(User, assigned_pm_id)

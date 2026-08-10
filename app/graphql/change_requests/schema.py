@@ -29,7 +29,7 @@ from app.graphql.documents.schema import DocumentType
 from app.graphql.loaders import get_tasks_by_change_request_loader
 from app.graphql.planning.schema import TaskType
 from app.graphql.portal.repository import get_project_for_company
-from app.graphql.projects.service import actor_can_access_project
+from app.graphql.projects.service import actor_can_access_project, actor_can_mutate_project
 
 
 def _gql_error(exc: Exception) -> None:
@@ -392,9 +392,9 @@ class ChangeRequestMutation:
         project = await get_project_for_cr(ctx.db, UUID(str(project_id)))
         if project is None:
             raise GraphQLError("Project not found", extensions={"code": "not_found"})
-        if not await actor_can_access_project(ctx.db, ctx.user, project.id):
+        if not await actor_can_mutate_project(ctx.db, ctx.user, project.id):
             raise GraphQLError(
-                "You don't have access to this project.",
+                "You're not assigned to this project.",
                 extensions={"code": "authorization_error"},
             )
         try:

@@ -1,11 +1,13 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_activity_log
 from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.enums import ProjectStatus, UserRole
 from app.db.models.contact import Contact
+from app.db.models.planning import Task
 from app.db.models.project import Project
 from app.db.models.project_contact import ProjectContact
 from app.db.models.project_member import ProjectMember
@@ -42,16 +44,32 @@ async def get_projects(
 
 
 async def actor_can_access_project(db: AsyncSession, actor: User, project_id: UUID) -> bool:
-    """Whether `actor` can see data scoped to `project_id` — everyone but a
-    team member can see everything; a team member only what they're on.
+    """Whether `actor` can *see* data scoped to `project_id` — everyone but
+    a team member can see everything; a team member only what they're on.
     Mirrors the scoping in `get_projects`/`get_project_by_id`, for the
-    project-scoped endpoints (change requests, phases, workload) that don't
-    go through those two directly.
+    project-scoped read endpoints (phases, milestones, workload) that don't
+    go through those two directly. For write access, see
+    `actor_can_mutate_project` below — PM read and write scope differ.
     """
     if actor.role != UserRole.TEAM_MEMBER.value:
         return True
     member = await get_project_member(db, project_id, actor.id)
     return member is not None
+
+
+async def actor_can_mutate_project(db: AsyncSession, actor: User, project_id: UUID) -> bool:
+    """Whether `actor` can create/edit/delete things inside `project_id`.
+    Admins always can. A PM only if they're a member of the project (the
+    assigned PM, or added to its team) — otherwise it's read-only to them,
+    even though they can see it (see `actor_can_access_project`). Team
+    members never get general edit rights here; their narrow own-task,
+    status-only exception lives in `update_task_record`.
+    """
+    if actor.role == UserRole.ADMIN.value:
+        return True
+    if actor.role == UserRole.PROJECT_MANAGER.value:
+        return await get_project_member(db, project_id, actor.id) is not None
+    return False
 
 
 async def get_project_by_id(db: AsyncSession, project_id: UUID, *, actor: User | None = None) -> Project:
@@ -117,6 +135,8 @@ async def update_project_record(
     updates: dict,
 ) -> Project:
     project = await get_project_by_id(db, project_id)
+    if not await actor_can_mutate_project(db, actor, project.id):
+        raise AuthorizationError("You're not assigned to this project.")
     before = _project_to_dict(project)
     prev_status = project.status
     prev_pm_id = project.project_manager_id
@@ -135,6 +155,8 @@ async def update_project_record(
     )
     if project.project_manager_id is not None and project.project_manager_id != prev_pm_id:
         await ensure_project_member(db, org_id=actor.org_id, project_id=project.id, user_id=project.project_manager_id)
+    if prev_pm_id is not None and prev_pm_id != project.project_manager_id:
+        await _remove_stale_pm_membership(db, actor=actor, project=project, old_pm_id=prev_pm_id)
     if prev_status != ProjectStatus.COMPLETED.value and project.status == ProjectStatus.COMPLETED.value:
         from app.db.enums import SequenceTriggerType
         from app.graphql.contacts.repository import get_contacts_by_company_ids
@@ -155,8 +177,46 @@ async def update_project_record(
     return project
 
 
+async def _remove_stale_pm_membership(db: AsyncSession, *, actor: User, project: Project, old_pm_id: UUID) -> None:
+    """When a project gets a new PM, the outgoing one keeps their team
+    membership unless we clean it up here — otherwise they silently keep
+    seeing a project they no longer manage. Skipped if they still have an
+    open task on it, so real work in progress doesn't just vanish from their
+    view.
+    """
+    still_has_open_task = await db.scalar(
+        select(Task.id).where(
+            Task.project_id == project.id,
+            Task.assignee_id == old_pm_id,
+            Task.deleted_at.is_(None),
+            Task.status != "done",
+        ).limit(1)
+    )
+    if still_has_open_task is not None:
+        return
+
+    membership = await get_project_member(db, project.id, old_pm_id)
+    if membership is None:
+        return
+
+    old_pm = await db.get(User, old_pm_id)
+    await db.delete(membership)
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="update",
+        entity_type="project",
+        entity_id=project.id,
+        diff={"member_removed": old_pm.name if old_pm else str(old_pm_id), "reason": "no longer project manager"},
+    )
+
+
 async def delete_project_record(db: AsyncSession, *, actor: User, project_id: UUID) -> Project:
     project = await get_project_by_id(db, project_id)
+    if not await actor_can_mutate_project(db, actor, project.id):
+        raise AuthorizationError("You're not assigned to this project.")
     before = _project_to_dict(project)
     await soft_delete_project(db, project)
     await write_activity_log(
@@ -195,6 +255,8 @@ async def add_project_member_record(
     db: AsyncSession, *, actor: User, project_id: UUID, user_id: UUID
 ) -> User:
     project = await get_project_by_id(db, project_id)
+    if not await actor_can_mutate_project(db, actor, project.id):
+        raise AuthorizationError("You're not assigned to this project.")
     target = await _get_org_user(db, user_id, actor.org_id)
     _require_can_manage_membership(actor, target)
 
@@ -231,12 +293,19 @@ async def remove_project_member_record(
     db: AsyncSession, *, actor: User, project_id: UUID, user_id: UUID
 ) -> bool:
     project = await get_project_by_id(db, project_id)
+    if not await actor_can_mutate_project(db, actor, project.id):
+        raise AuthorizationError("You're not assigned to this project.")
     target = await _get_org_user(db, user_id, actor.org_id)
     _require_can_manage_membership(actor, target)
 
     membership = await get_project_member(db, project.id, target.id)
     if membership is None:
         raise NotFoundError("This person isn't on the project.")
+    if project.project_manager_id == target.id:
+        raise DomainError(
+            "Reassign the project manager before removing them from the project.",
+            code="bad_user_input",
+        )
 
     await db.delete(membership)
     await db.flush()
@@ -263,6 +332,8 @@ async def add_project_contact_record(
     db: AsyncSession, *, actor: User, project_id: UUID, contact_id: UUID
 ) -> Contact:
     project = await get_project_by_id(db, project_id)
+    if not await actor_can_mutate_project(db, actor, project.id):
+        raise AuthorizationError("You're not assigned to this project.")
     contact = await _get_org_contact(db, contact_id, actor.org_id)
     if contact.company_id != project.company_id:
         raise DomainError("This contact isn't at the project's client.", code="bad_user_input")
@@ -289,6 +360,8 @@ async def remove_project_contact_record(
     db: AsyncSession, *, actor: User, project_id: UUID, contact_id: UUID
 ) -> bool:
     project = await get_project_by_id(db, project_id)
+    if not await actor_can_mutate_project(db, actor, project.id):
+        raise AuthorizationError("You're not assigned to this project.")
     contact = await _get_org_contact(db, contact_id, actor.org_id)
 
     roster_entry = await get_project_contact(db, project.id, contact.id)

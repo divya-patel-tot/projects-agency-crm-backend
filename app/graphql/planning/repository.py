@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError, NotFoundError
 from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
+from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 
 
 async def list_phases_for_project(db: AsyncSession, project_id: UUID) -> list[ProjectPhase]:
@@ -213,7 +215,7 @@ async def compute_workload(
     *,
     project_id: UUID | None = None,
 ) -> list[dict]:
-    stmt = (
+    task_stmt = (
         select(
             Task.assignee_id,
             func.coalesce(func.sum(Task.estimated_hours), 0),
@@ -224,17 +226,48 @@ async def compute_workload(
         .group_by(Task.assignee_id)
     )
     if project_id:
-        stmt = stmt.where(Task.project_id == project_id)
+        task_stmt = task_stmt.where(Task.project_id == project_id)
+    task_result = await db.execute(task_stmt)
+    task_stats = {
+        assignee_id: {
+            "total_estimated_hours": float(est or 0),
+            "total_actual_hours": float(act or 0),
+            "open_task_count": int(count or 0),
+        }
+        for assignee_id, est, act, count in task_result.all()
+    }
 
-    result = await db.execute(stmt)
+    # Project/client counts come from membership, not tasks, so someone on a
+    # project with no open tasks yet still shows up with a real project count
+    # instead of being absent from the roster entirely.
+    member_stmt = select(ProjectMember.user_id, ProjectMember.project_id, Project.company_id).join(
+        Project, Project.id == ProjectMember.project_id
+    ).where(Project.deleted_at.is_(None))
+    if project_id:
+        member_stmt = member_stmt.where(ProjectMember.project_id == project_id)
+    member_result = await db.execute(member_stmt)
+    projects_by_user: dict[UUID, set[UUID]] = defaultdict(set)
+    companies_by_user: dict[UUID, set[UUID]] = defaultdict(set)
+    for user_id, member_project_id, company_id in member_result.all():
+        projects_by_user[user_id].add(member_project_id)
+        companies_by_user[user_id].add(company_id)
+
+    all_user_ids = set(task_stats) | set(projects_by_user)
     rows = []
-    for assignee_id, est, act, count in result.all():
+    for user_id in all_user_ids:
+        stats = task_stats.get(
+            user_id, {"total_estimated_hours": 0.0, "total_actual_hours": 0.0, "open_task_count": 0}
+        )
+        user_project_ids = projects_by_user.get(user_id, set())
+        user_company_ids = companies_by_user.get(user_id, set())
         rows.append(
             {
-                "assignee_id": assignee_id,
-                "total_estimated_hours": float(est or 0),
-                "total_actual_hours": float(act or 0),
-                "open_task_count": int(count or 0),
+                "assignee_id": user_id,
+                **stats,
+                "project_count": len(user_project_ids),
+                "client_count": len(user_company_ids),
+                "project_ids": list(user_project_ids),
+                "client_ids": list(user_company_ids),
             }
         )
     return rows

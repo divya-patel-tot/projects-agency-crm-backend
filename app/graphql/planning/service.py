@@ -23,7 +23,7 @@ from app.graphql.planning.repository import (
     validate_dependency_insert,
 )
 from app.graphql.projects.repository import ensure_project_member
-from app.graphql.projects.service import actor_can_access_project
+from app.graphql.projects.service import actor_can_access_project, actor_can_mutate_project
 
 
 def _phase_dict(phase: ProjectPhase) -> dict:
@@ -97,6 +97,8 @@ async def create_phase_record(
     due_date=None,
     status: str = "not_started",
 ) -> ProjectPhase:
+    if not await actor_can_mutate_project(db, actor, project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     phase = ProjectPhase(
         org_id=actor.org_id,
         project_id=project_id,
@@ -124,6 +126,8 @@ async def update_phase_record(db: AsyncSession, *, actor: User, phase_id: UUID, 
     phase = await get_phase(db, phase_id)
     if phase is None:
         raise NotFoundError("Phase not found")
+    if not await actor_can_mutate_project(db, actor, phase.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     before = _phase_dict(phase)
     for key, value in updates.items():
         if value is not None and hasattr(phase, key):
@@ -145,6 +149,8 @@ async def delete_phase_record(db: AsyncSession, *, actor: User, phase_id: UUID) 
     phase = await get_phase(db, phase_id)
     if phase is None:
         raise NotFoundError("Phase not found")
+    if not await actor_can_mutate_project(db, actor, phase.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     before = _phase_dict(phase)
     await soft_delete_entity(db, phase)
     await write_activity_log(
@@ -171,6 +177,11 @@ async def create_milestone_record(
     status: str = "not_started",
     requires_client_approval: bool = False,
 ) -> Milestone:
+    phase = await get_phase(db, phase_id)
+    if phase is None:
+        raise NotFoundError("Phase not found")
+    if not await actor_can_mutate_project(db, actor, phase.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     milestone = Milestone(
         org_id=actor.org_id,
         phase_id=phase_id,
@@ -205,6 +216,9 @@ async def update_milestone_record(
     milestone = await get_milestone(db, milestone_id)
     if milestone is None:
         raise NotFoundError("Milestone not found")
+    phase = await get_phase(db, milestone.phase_id)
+    if phase is not None and not await actor_can_mutate_project(db, actor, phase.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     before = _milestone_dict(milestone)
     for key, value in updates.items():
         if value is not None and hasattr(milestone, key):
@@ -226,6 +240,9 @@ async def delete_milestone_record(db: AsyncSession, *, actor: User, milestone_id
     milestone = await get_milestone(db, milestone_id)
     if milestone is None:
         raise NotFoundError("Milestone not found")
+    phase = await get_phase(db, milestone.phase_id)
+    if phase is not None and not await actor_can_mutate_project(db, actor, phase.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     before = _milestone_dict(milestone)
     await soft_delete_entity(db, milestone)
     await write_activity_log(
@@ -259,6 +276,8 @@ async def create_task_record(
     estimated_hours: float | None = None,
     actual_hours: float | None = None,
 ) -> Task:
+    if not await actor_can_mutate_project(db, actor, project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     if change_request_id is not None:
         cr = await db.get(ChangeRequest, change_request_id)
         if cr is None or cr.project_id != project_id:
@@ -326,6 +345,11 @@ async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, up
         }
         if disallowed:
             raise AuthorizationError("You can only update the status of your own tasks.")
+    elif actor.role == UserRole.PROJECT_MANAGER.value:
+        # Unlike team_member, a PM who passes this gets the full field set —
+        # they're just restricted to projects they're actually assigned to.
+        if not await actor_can_mutate_project(db, actor, task.project_id):
+            raise AuthorizationError("You're not assigned to this project.")
     before = _task_dict(task)
     prev_assignee_id = task.assignee_id
     normalized = _normalize_task_updates(updates)
@@ -351,6 +375,8 @@ async def delete_task_record(db: AsyncSession, *, actor: User, task_id: UUID) ->
     task = await get_task(db, task_id)
     if task is None:
         raise NotFoundError("Task not found")
+    if not await actor_can_mutate_project(db, actor, task.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     before = _task_dict(task)
     await soft_delete_entity(db, task)
     await write_activity_log(
@@ -374,6 +400,8 @@ async def add_task_dependency_record(
     depends_on_task_id: UUID,
     dep_type: str = "finish_to_start",
 ) -> TaskDependency:
+    if not await actor_can_mutate_project(db, actor, project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     await validate_dependency_insert(
         db,
         project_id=project_id,
@@ -404,6 +432,9 @@ async def remove_task_dependency_record(db: AsyncSession, *, actor: User, depend
     row = await db.get(TaskDependency, dependency_id)
     if row is None:
         raise NotFoundError("Dependency not found")
+    task = await get_task(db, row.task_id)
+    if task is not None and not await actor_can_mutate_project(db, actor, task.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     await db.delete(row)
     await db.flush()
     await write_activity_log(
@@ -418,6 +449,8 @@ async def remove_task_dependency_record(db: AsyncSession, *, actor: User, depend
 
 
 async def reorder_phases(db: AsyncSession, *, actor: User, project_id: UUID, ordered_ids: list[UUID]) -> list[ProjectPhase]:
+    if not await actor_can_mutate_project(db, actor, project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     phases = await reorder_phase_indices(db, project_id, ordered_ids)
     await write_activity_log(
         db,
@@ -438,6 +471,9 @@ async def reorder_milestones(
     phase_id: UUID,
     ordered_ids: list[UUID],
 ) -> list[Milestone]:
+    phase = await get_phase(db, phase_id)
+    if phase is not None and not await actor_can_mutate_project(db, actor, phase.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     milestones = await reorder_milestone_indices(db, phase_id, ordered_ids)
     await write_activity_log(
         db,

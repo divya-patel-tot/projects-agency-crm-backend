@@ -2,8 +2,9 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import DomainError, NotFoundError
+from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.enums import ApprovalStatus, EntityType
+from app.db.models.user import User
 from app.graphql.approvals.repository import (
     approve_milestone_record,
     create_milestone_approval,
@@ -13,6 +14,7 @@ from app.graphql.approvals.repository import (
     reject_milestone_record,
 )
 from app.graphql.notifications.service import notify
+from app.graphql.projects.service import actor_can_mutate_project
 
 
 async def _notify_pm_of_milestone_response(db: AsyncSession, *, milestone, decision: str) -> None:
@@ -45,12 +47,15 @@ async def _notify_pm_of_milestone_response(db: AsyncSession, *, milestone, decis
     )
 
 
-async def mark_milestone_ready_for_review(db: AsyncSession, *, org_id: UUID, milestone_id: UUID):
-    from app.db.models.planning import Milestone
+async def mark_milestone_ready_for_review(db: AsyncSession, *, org_id: UUID, milestone_id: UUID, actor: User):
+    from app.db.models.planning import Milestone, ProjectPhase
 
     milestone = await db.get(Milestone, milestone_id)
     if milestone is None or milestone.deleted_at is not None:
         raise NotFoundError("Milestone not found")
+    phase = await db.get(ProjectPhase, milestone.phase_id)
+    if phase is not None and not await actor_can_mutate_project(db, actor, phase.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
     return await create_milestone_approval(db, org_id=org_id, milestone_id=milestone_id)
 
 
