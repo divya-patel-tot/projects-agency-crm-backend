@@ -26,7 +26,11 @@ from app.graphql.documents.service import (
     request_upload_url,
 )
 from app.graphql.documents.schema import DocumentType
-from app.graphql.loaders import get_phases_by_project_loader, get_tasks_by_project_loader
+from app.graphql.loaders import (
+    get_columns_by_project_loader,
+    get_phases_by_project_loader,
+    get_tasks_by_project_loader,
+)
 from app.graphql.planning.repository import list_milestones_for_phase, list_phases_for_project
 from app.graphql.planning.schema import MilestoneType, PhaseType, TaskType
 from app.graphql.change_requests.schema import ChangeRequestType
@@ -129,9 +133,11 @@ class PortalProjectType:
         project = await info.context.db.get(Project, UUID(str(self.id)))
         if project is None:
             return 0
-        loader = get_tasks_by_project_loader(info.context)
-        tasks = await loader.load(UUID(str(self.id)))
-        return compute_project_completion_percent(project=project, tasks=tasks)
+        tasks_loader = get_tasks_by_project_loader(info.context)
+        columns_loader = get_columns_by_project_loader(info.context)
+        tasks = await tasks_loader.load(UUID(str(self.id)))
+        columns = await columns_loader.load(UUID(str(self.id)))
+        return compute_project_completion_percent(project=project, tasks=tasks, columns=columns)
 
     @strawberry.field
     async def project_manager(self, info: Info) -> PortalManagerType | None:

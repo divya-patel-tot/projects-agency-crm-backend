@@ -12,7 +12,7 @@ from app.db.models.invoice import Invoice
 from app.db.models.lookup import CompanySize, Industry
 from app.db.models.notification import Notification
 from app.db.models.organization import Organization
-from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
+from app.db.models.planning import Milestone, ProjectColumn, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
 from app.db.models.project_contact import ProjectContact
 from app.db.models.project_member import ProjectMember
@@ -48,6 +48,7 @@ __all__ = [
     "Notification",
     "Organization",
     "Project",
+    "ProjectColumn",
     "ProjectContact",
     "ProjectMember",
     "ProjectPhase",

@@ -31,3 +31,4 @@ class Project(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, SoftDel
 
     phases: Mapped[list["ProjectPhase"]] = relationship(back_populates="project")
     tasks: Mapped[list["Task"]] = relationship(back_populates="project", foreign_keys="Task.project_id")
+    columns: Mapped[list["ProjectColumn"]] = relationship(back_populates="project")

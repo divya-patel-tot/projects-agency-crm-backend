@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from app.core.config import get_settings
 from app.core.db import AsyncSessionLocal, get_tenant_db
@@ -14,7 +14,7 @@ from app.db.enums import ChangeRequestStatus, EnrollmentStatus, TouchpointChanne
 from app.db.models.change_request import ChangeRequest
 from app.db.models.company import Company
 from app.db.models.organization import Organization
-from app.db.models.planning import Milestone, ProjectPhase, Task
+from app.db.models.planning import Milestone, ProjectColumn, ProjectPhase, Task
 from app.db.models.project import Project
 from app.db.models.retention import JobRun
 from app.db.models.user import User
@@ -207,12 +207,23 @@ async def project_deadline_reminders(run_date: date | None = None) -> dict:
         if not await _should_run_job(org_id, JOB_DEADLINE_REMINDERS, today):
             continue
         async with get_tenant_db(org_id) as db:
+            terminal_columns = select(ProjectColumn.project_id, ProjectColumn.code).where(
+                ProjectColumn.is_terminal.is_(True)
+            ).subquery()
             task_rows = await db.execute(
-                select(Task).where(
+                select(Task)
+                .outerjoin(
+                    terminal_columns,
+                    and_(
+                        terminal_columns.c.project_id == Task.project_id,
+                        terminal_columns.c.code == Task.status,
+                    ),
+                )
+                .where(
                     Task.deleted_at.is_(None),
                     Task.due_date.is_not(None),
                     Task.due_date <= horizon,
-                    Task.status.notin_(["done"]),
+                    terminal_columns.c.code.is_(None),
                 )
             )
             for task in task_rows.scalars().all():

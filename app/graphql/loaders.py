@@ -19,6 +19,7 @@ from app.graphql.planning.repository import (
     get_tasks_by_project_ids,
 )
 from app.graphql.projects.repository import (
+    get_columns_by_project_ids,
     get_contacts_by_project_ids,
     get_members_by_project_ids,
     get_projects_by_company_ids,
@@ -70,6 +71,16 @@ def get_phases_by_project_loader(context) -> DataLoader:
         return _group_by(phases, lambda p: p.project_id, project_ids)
 
     return _make_loader(context, "_phases_by_project_loader", load_fn)
+
+
+def get_columns_by_project_loader(context) -> DataLoader:
+    async def load_fn(project_ids: list[UUID]) -> list[list]:
+        if context.db is None:
+            return [[] for _ in project_ids]
+        columns = await get_columns_by_project_ids(context.db, project_ids)
+        return _group_by(columns, lambda c: c.project_id, project_ids)
+
+    return _make_loader(context, "_columns_by_project_loader", load_fn)
 
 
 def get_tasks_by_project_loader(context) -> DataLoader:

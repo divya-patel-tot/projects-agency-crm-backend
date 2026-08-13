@@ -2,25 +2,30 @@
 
 from __future__ import annotations
 
-from app.db.enums import ProjectStatus, TaskStatus
-from app.db.models.planning import Task
+from app.db.enums import ProjectStatus
+from app.db.models.planning import ProjectColumn, Task
 from app.db.models.project import Project
 
-# Weighted Kanban progress: partial credit as work moves through the board.
-# todo → 0%, in progress → 40%, in review → 80%, done → 100%
-_TASK_STATUS_PROGRESS: dict[str, float] = {
-    TaskStatus.TODO.value: 0.0,
-    TaskStatus.IN_PROGRESS.value: 40.0,
-    TaskStatus.REVIEW.value: 80.0,
-    TaskStatus.DONE.value: 100.0,
-}
+
+def task_progress_points(status: str | None, columns: list[ProjectColumn]) -> float:
+    """Weighted Kanban progress: partial credit as work moves through the
+    board. The terminal column is always 100% regardless of its position;
+    every other column's weight is just its position as a fraction of the
+    total column count — no manual per-column weight configuration needed.
+    """
+    ordered = sorted(columns, key=lambda column: column.order_index)
+    value = (status or "").lower()
+    for index, column in enumerate(ordered):
+        if column.code == value:
+            if column.is_terminal:
+                return 100.0
+            return (index / (len(ordered) - 1)) * 100.0 if len(ordered) > 1 else 0.0
+    return 0.0
 
 
-def task_progress_points(status: str | None) -> float:
-    return _TASK_STATUS_PROGRESS.get((status or "").lower(), 0.0)
-
-
-def compute_project_completion_percent(*, project: Project, tasks: list[Task]) -> int:
+def compute_project_completion_percent(
+    *, project: Project, tasks: list[Task], columns: list[ProjectColumn]
+) -> int:
     """Return 0–100 weighted progress for a project.
 
     Completed projects are always 100%. Active work uses stage-weighted task progress.
@@ -29,7 +34,7 @@ def compute_project_completion_percent(*, project: Project, tasks: list[Task]) -
         return 100
     if project.status == ProjectStatus.CANCELLED.value:
         return 0
-    if not tasks:
+    if not tasks or not columns:
         return 0
-    total = sum(task_progress_points(task.status) for task in tasks)
+    total = sum(task_progress_points(task.status, columns) for task in tasks)
     return round(total / len(tasks))

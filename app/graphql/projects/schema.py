@@ -13,6 +13,7 @@ from app.graphql.companies.schema import CompanyType, company_from_model
 from app.graphql.companies.service import get_company_by_id
 from app.graphql.contacts.schema import ContactType
 from app.graphql.loaders import (
+    get_columns_by_project_loader,
     get_contacts_by_project_loader,
     get_members_by_project_loader,
     get_phases_by_project_loader,
@@ -25,12 +26,16 @@ from app.graphql.projects.service import (
     actor_can_mutate_project,
     add_project_contact_record,
     add_project_member_record,
+    create_project_column_record,
     create_project_record,
+    delete_project_column_record,
     delete_project_record,
     get_project_by_id,
     get_projects,
     remove_project_contact_record,
     remove_project_member_record,
+    reorder_project_columns,
+    update_project_column_record,
     update_project_record,
 )
 from app.graphql.tags.schema import TagType
@@ -41,6 +46,27 @@ def _gql_error(exc: Exception) -> None:
     if isinstance(exc, (DomainError, NotFoundError)):
         raise GraphQLError(exc.message, extensions={"code": exc.code}) from exc
     raise exc
+
+
+@strawberry.type
+class ProjectColumnType:
+    id: strawberry.ID
+    project_id: strawberry.ID
+    code: str
+    label: str
+    order_index: int
+    is_terminal: bool
+
+    @classmethod
+    def from_model(cls, column) -> "ProjectColumnType":
+        return cls(
+            id=strawberry.ID(str(column.id)),
+            project_id=strawberry.ID(str(column.project_id)),
+            code=column.code,
+            label=column.label,
+            order_index=column.order_index,
+            is_terminal=column.is_terminal,
+        )
 
 
 @strawberry.type
@@ -138,6 +164,12 @@ class ProjectType:
         return await actor_can_mutate_project(info.context.db, info.context.user, UUID(str(self.id)))
 
     @strawberry.field
+    async def columns(self, info: Info) -> list[ProjectColumnType]:
+        loader = get_columns_by_project_loader(info.context)
+        rows = await loader.load(UUID(str(self.id)))
+        return [ProjectColumnType.from_model(row) for row in rows]
+
+    @strawberry.field
     async def completion_percent(self, info: Info) -> int:
         from app.db.models.project import Project
 
@@ -146,9 +178,11 @@ class ProjectType:
         project = await info.context.db.get(Project, UUID(str(self.id)))
         if project is None:
             return 0
-        loader = get_tasks_by_project_loader(info.context)
-        tasks = await loader.load(UUID(str(self.id)))
-        return compute_project_completion_percent(project=project, tasks=tasks)
+        tasks_loader = get_tasks_by_project_loader(info.context)
+        columns_loader = get_columns_by_project_loader(info.context)
+        tasks = await tasks_loader.load(UUID(str(self.id)))
+        columns = await columns_loader.load(UUID(str(self.id)))
+        return compute_project_completion_percent(project=project, tasks=tasks, columns=columns)
 
 
 @strawberry.type
@@ -308,5 +342,69 @@ class ProjectMutation:
             return await remove_project_contact_record(
                 ctx.db, actor=ctx.user, project_id=UUID(str(project_id)), contact_id=UUID(str(contact_id))
             )
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def create_project_column(
+        self,
+        info: Info,
+        project_id: strawberry.ID,
+        label: str,
+        insert_after_column_id: strawberry.ID | None = None,
+        is_terminal: bool = False,
+    ) -> ProjectColumnType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            column = await create_project_column_record(
+                ctx.db,
+                actor=ctx.user,
+                project_id=UUID(str(project_id)),
+                label=label,
+                insert_after_column_id=UUID(str(insert_after_column_id)) if insert_after_column_id else None,
+                is_terminal=is_terminal,
+            )
+            return ProjectColumnType.from_model(column)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def update_project_column(
+        self,
+        info: Info,
+        id: strawberry.ID,
+        label: str | None = None,
+        is_terminal: bool | None = None,
+    ) -> ProjectColumnType:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            column = await update_project_column_record(
+                ctx.db, actor=ctx.user, column_id=UUID(str(id)), label=label, is_terminal=is_terminal
+            )
+            return ProjectColumnType.from_model(column)
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def delete_project_column(self, info: Info, id: strawberry.ID) -> bool:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            return await delete_project_column_record(ctx.db, actor=ctx.user, column_id=UUID(str(id)))
+        except Exception as exc:
+            _gql_error(exc)
+
+    @strawberry.mutation
+    async def reorder_project_columns(
+        self, info: Info, project_id: strawberry.ID, ordered_column_ids: list[strawberry.ID]
+    ) -> list[ProjectColumnType]:
+        ctx = require_role(info.context, "admin", "project_manager")
+        try:
+            columns = await reorder_project_columns(
+                ctx.db,
+                actor=ctx.user,
+                project_id=UUID(str(project_id)),
+                ordered_column_ids=[UUID(str(cid)) for cid in ordered_column_ids],
+            )
+            return [ProjectColumnType.from_model(column) for column in columns]
         except Exception as exc:
             _gql_error(exc)

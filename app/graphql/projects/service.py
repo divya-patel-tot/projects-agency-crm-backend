@@ -1,13 +1,16 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_activity_log
 from app.core.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.db.enums import ProjectStatus, UserRole
 from app.db.models.contact import Contact
-from app.db.models.planning import Task
+from app.db.models.planning import Milestone, ProjectColumn, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
 from app.db.models.project_contact import ProjectContact
 from app.db.models.project_member import ProjectMember
@@ -18,9 +21,15 @@ from app.graphql.projects.repository import (
     create_project,
     ensure_project_member,
     get_project,
+    get_project_column,
     get_project_contact,
     get_project_member,
+    get_terminal_column,
+    list_columns_for_project,
     list_projects,
+    reorder_column_indices,
+    seed_default_columns,
+    slugify_column_code,
     soft_delete_project,
 )
 
@@ -114,6 +123,7 @@ async def create_project_record(
         health=health,
     )
     await create_project(db, project)
+    await seed_default_columns(db, org_id=actor.org_id, project_id=project.id)
     await write_activity_log(
         db,
         org_id=actor.org_id,
@@ -194,12 +204,13 @@ async def _remove_stale_pm_membership(db: AsyncSession, *, actor: User, project:
     open task on it, so real work in progress doesn't just vanish from their
     view.
     """
+    terminal = await get_terminal_column(db, project.id)
     still_has_open_task = await db.scalar(
         select(Task.id).where(
             Task.project_id == project.id,
             Task.assignee_id == old_pm_id,
             Task.deleted_at.is_(None),
-            Task.status != "done",
+            Task.status != (terminal.code if terminal is not None else "__none__"),
         ).limit(1)
     )
     if still_has_open_task is not None:
@@ -223,6 +234,41 @@ async def _remove_stale_pm_membership(db: AsyncSession, *, actor: User, project:
     )
 
 
+async def _cascade_delete_project_children(db: AsyncSession, project_id: UUID) -> None:
+    """A soft-deleted project disappears from every project listing, but its
+    phases/milestones/tasks wouldn't on their own — several queries (workload,
+    search) filter only on the child row's own `deleted_at`, not its parent
+    project's, so leaving them live would leak a "deleted" project's tasks
+    into unrelated views. Dependency rows are pure links, so they're hard
+    deleted rather than soft-deleted.
+    """
+    now = datetime.now(UTC)
+    task_ids_subq = select(Task.id).where(Task.project_id == project_id)
+    await db.execute(
+        sa_delete(TaskDependency).where(
+            TaskDependency.task_id.in_(task_ids_subq)
+            | TaskDependency.depends_on_task_id.in_(task_ids_subq)
+        )
+    )
+    await db.execute(
+        sa_update(Task)
+        .where(Task.project_id == project_id, Task.deleted_at.is_(None))
+        .values(deleted_at=now)
+    )
+    phase_ids_subq = select(ProjectPhase.id).where(ProjectPhase.project_id == project_id)
+    await db.execute(
+        sa_update(Milestone)
+        .where(Milestone.phase_id.in_(phase_ids_subq), Milestone.deleted_at.is_(None))
+        .values(deleted_at=now)
+    )
+    await db.execute(
+        sa_update(ProjectPhase)
+        .where(ProjectPhase.project_id == project_id, ProjectPhase.deleted_at.is_(None))
+        .values(deleted_at=now)
+    )
+    await db.flush()
+
+
 async def delete_project_record(db: AsyncSession, *, actor: User, project_id: UUID) -> Project:
     project = await get_project_by_id(db, project_id)
     if not await actor_can_mutate_project(db, actor, project.id):
@@ -230,6 +276,7 @@ async def delete_project_record(db: AsyncSession, *, actor: User, project_id: UU
     before = _project_to_dict(project)
     was_active = project.status == ProjectStatus.ACTIVE.value
     await soft_delete_project(db, project)
+    await _cascade_delete_project_children(db, project.id)
     await write_activity_log(
         db,
         org_id=actor.org_id,
@@ -393,3 +440,169 @@ async def remove_project_contact_record(
         diff={"contact_removed": f"{contact.first_name} {contact.last_name}"},
     )
     return True
+
+
+async def _get_project_column_or_404(db: AsyncSession, column_id: UUID) -> ProjectColumn:
+    column = await get_project_column(db, column_id)
+    if column is None:
+        raise NotFoundError("Column not found")
+    return column
+
+
+async def create_project_column_record(
+    db: AsyncSession,
+    *,
+    actor: User,
+    project_id: UUID,
+    label: str,
+    insert_after_column_id: UUID | None = None,
+    is_terminal: bool = False,
+) -> ProjectColumn:
+    project = await get_project_by_id(db, project_id)
+    if not await actor_can_mutate_project(db, actor, project.id):
+        raise AuthorizationError("You're not assigned to this project.")
+
+    columns = await list_columns_for_project(db, project.id)
+    existing_codes = {column.code for column in columns}
+    code = slugify_column_code(label, existing_codes)
+
+    if insert_after_column_id is not None:
+        anchor = next((column for column in columns if column.id == insert_after_column_id), None)
+        if anchor is None:
+            raise NotFoundError("Column not found")
+        order_index = anchor.order_index + 1
+        for column in columns:
+            if column.order_index >= order_index:
+                column.order_index += 1
+    else:
+        order_index = (max((column.order_index for column in columns), default=-1)) + 1
+
+    if is_terminal:
+        current_terminal = await get_terminal_column(db, project.id)
+        if current_terminal is not None:
+            current_terminal.is_terminal = False
+            # Flush the "unset" before the new terminal row is inserted —
+            # the partial unique index on is_terminal is checked per-statement,
+            # not deferred to end of transaction, so these can't land together.
+            await db.flush()
+
+    new_column = ProjectColumn(
+        org_id=actor.org_id,
+        project_id=project.id,
+        code=code,
+        label=label,
+        order_index=order_index,
+        is_terminal=is_terminal,
+    )
+    db.add(new_column)
+    await db.flush()
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="create",
+        entity_type="project",
+        entity_id=project.id,
+        diff={"column_added": label},
+    )
+    return new_column
+
+
+async def update_project_column_record(
+    db: AsyncSession,
+    *,
+    actor: User,
+    column_id: UUID,
+    label: str | None = None,
+    is_terminal: bool | None = None,
+) -> ProjectColumn:
+    column = await _get_project_column_or_404(db, column_id)
+    if not await actor_can_mutate_project(db, actor, column.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
+
+    before_label = column.label
+    if label is not None:
+        column.label = label
+
+    if is_terminal is False and column.is_terminal:
+        raise DomainError(
+            "A project must have exactly one terminal column — mark a different column as terminal first.",
+            code="terminal_required",
+        )
+    if is_terminal:
+        current_terminal = await get_terminal_column(db, column.project_id)
+        if current_terminal is not None and current_terminal.id != column.id:
+            current_terminal.is_terminal = False
+            # Same reasoning as create_project_column_record: the partial
+            # unique index is checked per-statement, so the "unset" has to
+            # land before "set new terminal" is flushed.
+            await db.flush()
+        column.is_terminal = True
+
+    await db.flush()
+    if label is not None and label != before_label:
+        await write_activity_log(
+            db,
+            org_id=actor.org_id,
+            actor_id=actor.id,
+            action="update",
+            entity_type="project",
+            entity_id=column.project_id,
+            diff={"before": {"label": before_label}, "after": {"label": column.label}},
+        )
+    return column
+
+
+async def delete_project_column_record(db: AsyncSession, *, actor: User, column_id: UUID) -> bool:
+    column = await _get_project_column_or_404(db, column_id)
+    if not await actor_can_mutate_project(db, actor, column.project_id):
+        raise AuthorizationError("You're not assigned to this project.")
+
+    if column.is_terminal:
+        raise DomainError(
+            "Reassign the terminal column before deleting this one.", code="column_is_terminal"
+        )
+
+    columns = await list_columns_for_project(db, column.project_id)
+    if len(columns) <= 1:
+        raise DomainError("A project needs at least one column.", code="column_minimum")
+
+    in_use = await db.scalar(
+        select(Task.id)
+        .where(Task.project_id == column.project_id, Task.status == column.code, Task.deleted_at.is_(None))
+        .limit(1)
+    )
+    if in_use is not None:
+        raise DomainError(
+            "Move or reassign tasks out of this column before deleting it.", code="column_not_empty"
+        )
+
+    label = column.label
+    project_id = column.project_id
+    await db.delete(column)
+    await db.flush()
+
+    remaining = await list_columns_for_project(db, project_id)
+    for index, remaining_column in enumerate(remaining):
+        remaining_column.order_index = index
+    await db.flush()
+
+    await write_activity_log(
+        db,
+        org_id=actor.org_id,
+        actor_id=actor.id,
+        action="delete",
+        entity_type="project",
+        entity_id=project_id,
+        diff={"column_removed": label},
+    )
+    return True
+
+
+async def reorder_project_columns(
+    db: AsyncSession, *, actor: User, project_id: UUID, ordered_column_ids: list[UUID]
+) -> list[ProjectColumn]:
+    project = await get_project_by_id(db, project_id)
+    if not await actor_can_mutate_project(db, actor, project.id):
+        raise AuthorizationError("You're not assigned to this project.")
+    return await reorder_column_indices(db, project.id, ordered_column_ids)

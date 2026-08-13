@@ -2,11 +2,11 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError, NotFoundError
-from app.db.models.planning import Milestone, ProjectPhase, Task, TaskDependency
+from app.db.models.planning import Milestone, ProjectColumn, ProjectPhase, Task, TaskDependency
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 
@@ -136,6 +136,21 @@ async def soft_delete_entity(db: AsyncSession, entity) -> None:
     await db.flush()
 
 
+async def delete_dependencies_for_task(db: AsyncSession, task_id: UUID) -> None:
+    """Dependency rows are just links, not real content — deleting the task
+    they point to or from should clean them up rather than leave a dangling
+    reference to a task that no longer exists.
+    """
+    result = await db.execute(
+        select(TaskDependency).where(
+            (TaskDependency.task_id == task_id) | (TaskDependency.depends_on_task_id == task_id)
+        )
+    )
+    for row in result.scalars().all():
+        await db.delete(row)
+    await db.flush()
+
+
 def _would_create_cycle(
     graph: dict[UUID, list[UUID]],
     task_id: UUID,
@@ -215,6 +230,12 @@ async def compute_workload(
     *,
     project_id: UUID | None = None,
 ) -> list[dict]:
+    # "Open" means not sitting in its own project's terminal column — a plain
+    # per-project outer join rather than a literal status string, since
+    # columns (and which one is terminal) are per-project configuration now.
+    terminal_columns = select(ProjectColumn.project_id, ProjectColumn.code).where(
+        ProjectColumn.is_terminal.is_(True)
+    ).subquery()
     task_stmt = (
         select(
             Task.assignee_id,
@@ -222,7 +243,18 @@ async def compute_workload(
             func.coalesce(func.sum(Task.actual_hours), 0),
             func.count(Task.id),
         )
-        .where(Task.deleted_at.is_(None), Task.assignee_id.is_not(None), Task.status != "done")
+        .outerjoin(
+            terminal_columns,
+            and_(
+                terminal_columns.c.project_id == Task.project_id,
+                terminal_columns.c.code == Task.status,
+            ),
+        )
+        .where(
+            Task.deleted_at.is_(None),
+            Task.assignee_id.is_not(None),
+            terminal_columns.c.code.is_(None),
+        )
         .group_by(Task.assignee_id)
     )
     if project_id:

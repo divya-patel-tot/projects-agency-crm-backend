@@ -79,6 +79,25 @@ class Task(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin, SoftDelete
     )
 
 
+class ProjectColumn(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin):
+    __tablename__ = "project_columns"
+    __table_args__ = (
+        UniqueConstraint("project_id", "code", name="uq_project_columns_project_code"),
+        Index("ix_project_columns_project_order", "project_id", "order_index"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False)
+    # The wire value stored in Task.status. Set once at creation and never
+    # changed again — renaming a column only ever touches `label`, so an
+    # existing task's status never breaks just because someone renamed it.
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    order_index: Mapped[int] = mapped_column(nullable=False, default=0)
+    is_terminal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    project: Mapped["Project"] = relationship(back_populates="columns")
+
+
 class TaskDependency(Base, UUIDPrimaryKeyMixin, OrgScopedMixin, TimestampMixin):
     __tablename__ = "task_dependencies"
     __table_args__ = (

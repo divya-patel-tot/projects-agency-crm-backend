@@ -52,6 +52,7 @@ from app.graphql.change_requests.state_machine import (
     validate_transition,
 )
 from app.graphql.health.service import refresh_company_health_score
+from app.graphql.projects.repository import get_first_column
 from app.graphql.projects.service import actor_can_mutate_project
 
 
@@ -232,6 +233,7 @@ async def _apply_in_progress_side_effects(
 
     phase = await get_first_phase_for_project(db, cr.project_id)
     if cr.type == ChangeRequestType.SCOPE_ADDITION.value and phase is not None:
+        first_column = await get_first_column(db, cr.project_id)
         await create_task_row(
             db,
             Task(
@@ -240,7 +242,7 @@ async def _apply_in_progress_side_effects(
                 phase_id=phase.id,
                 title=f"CR: {cr.title}",
                 description=cr.description,
-                status=TaskStatus.TODO.value,
+                status=first_column.code if first_column is not None else TaskStatus.TODO.value,
                 priority=TaskPriority.MEDIUM.value,
                 estimated_hours=float(cr.impact_hours) if cr.impact_hours is not None else None,
             ),

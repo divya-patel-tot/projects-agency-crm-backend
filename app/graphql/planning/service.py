@@ -12,9 +12,13 @@ from app.db.models.user import User
 from app.graphql.notifications.service import notify
 from app.graphql.planning.repository import (
     compute_workload,
+    delete_dependencies_for_task,
     get_milestone,
     get_phase,
+    get_subtasks_by_parent_ids,
     get_task,
+    get_tasks_by_milestone_ids,
+    get_tasks_by_phase_ids,
     list_milestones_for_phase,
     list_phases_for_project,
     reorder_milestone_indices,
@@ -22,7 +26,7 @@ from app.graphql.planning.repository import (
     soft_delete_entity,
     validate_dependency_insert,
 )
-from app.graphql.projects.repository import ensure_project_member
+from app.graphql.projects.repository import ensure_project_member, list_columns_for_project
 from app.graphql.projects.service import actor_can_access_project, actor_can_mutate_project
 
 
@@ -151,6 +155,11 @@ async def delete_phase_record(db: AsyncSession, *, actor: User, phase_id: UUID) 
         raise NotFoundError("Phase not found")
     if not await actor_can_mutate_project(db, actor, phase.project_id):
         raise AuthorizationError("You're not assigned to this project.")
+    if await list_milestones_for_phase(db, phase_id) or await get_tasks_by_phase_ids(db, [phase_id]):
+        raise DomainError(
+            "Move or delete this phase's milestones and tasks before deleting it.",
+            code="phase_not_empty",
+        )
     before = _phase_dict(phase)
     await soft_delete_entity(db, phase)
     await write_activity_log(
@@ -243,6 +252,11 @@ async def delete_milestone_record(db: AsyncSession, *, actor: User, milestone_id
     phase = await get_phase(db, milestone.phase_id)
     if phase is not None and not await actor_can_mutate_project(db, actor, phase.project_id):
         raise AuthorizationError("You're not assigned to this project.")
+    if await get_tasks_by_milestone_ids(db, [milestone_id]):
+        raise DomainError(
+            "Move or delete this milestone's tasks before deleting it.",
+            code="milestone_not_empty",
+        )
     before = _milestone_dict(milestone)
     await soft_delete_entity(db, milestone)
     await write_activity_log(
@@ -255,6 +269,14 @@ async def delete_milestone_record(db: AsyncSession, *, actor: User, milestone_id
         diff={"before": before},
     )
     return milestone
+
+
+async def _validate_task_status(db: AsyncSession, project_id: UUID, status: str | None) -> None:
+    if status is None:
+        return
+    columns = await list_columns_for_project(db, project_id)
+    if not any(column.code == status.lower() for column in columns):
+        raise DomainError("Unknown column", code="bad_user_input")
 
 
 async def create_task_record(
@@ -278,6 +300,7 @@ async def create_task_record(
 ) -> Task:
     if not await actor_can_mutate_project(db, actor, project_id):
         raise AuthorizationError("You're not assigned to this project.")
+    await _validate_task_status(db, project_id, status)
     if change_request_id is not None:
         cr = await db.get(ChangeRequest, change_request_id)
         if cr is None or cr.project_id != project_id:
@@ -353,6 +376,7 @@ async def update_task_record(db: AsyncSession, *, actor: User, task_id: UUID, up
     before = _task_dict(task)
     prev_assignee_id = task.assignee_id
     normalized = _normalize_task_updates(updates)
+    await _validate_task_status(db, task.project_id, normalized.get("status"))
     for key, value in normalized.items():
         if value is not None and hasattr(task, key):
             setattr(task, key, value)
@@ -377,7 +401,12 @@ async def delete_task_record(db: AsyncSession, *, actor: User, task_id: UUID) ->
         raise NotFoundError("Task not found")
     if not await actor_can_mutate_project(db, actor, task.project_id):
         raise AuthorizationError("You're not assigned to this project.")
+    if await get_subtasks_by_parent_ids(db, [task_id]):
+        raise DomainError(
+            "Delete this task's subtasks before deleting it.", code="task_has_subtasks"
+        )
     before = _task_dict(task)
+    await delete_dependencies_for_task(db, task_id)
     await soft_delete_entity(db, task)
     await write_activity_log(
         db,
